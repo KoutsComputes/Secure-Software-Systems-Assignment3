@@ -1,7 +1,7 @@
 SECURITY REQUIREMENTS 
 
 1. Voter Confidentiality (Cryptography)
-2. Vote Integrity (
+2. Vote Integrity
 3. Voting system availablity and DDOS resilience 
 4. Non Repudiation and Digital Signatures
 5. Incident Response and Disaster Recovery
