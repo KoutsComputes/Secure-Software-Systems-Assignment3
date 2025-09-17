@@ -1,1 +1,22 @@
 SECURITY REQUIREMENTS 
+
+1. Voter Confidentiality 
+2. Vote Integrity
+3. Voting system availablity and DDOS resilience 
+4. Non Repudiation and Digital Signatures
+5. Incident Response and Disaster Recovery
+6. Voter Authentication
+7. Role Based Access Control
+8. Scalability and Performance of the voting system
+9. Auditability and Immutable Logging
+10. Vote Verifiability
+11. 24*7 SOC support for Monitoring and Detection
+12. Security patch management 
+13. Accessibility and Transparency
+14. Physical and endpoint security for polling terminals
+15.
+16.
+17.
+18.
+19.
+20.
