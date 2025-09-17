@@ -1,27 +1,22 @@
 SECURITY REQUIREMENTS 
 
 1. Voter Confidentiality (Cryptography)
-2. Vote Integrity
-3. Voting system availablity and DDOS resilience 
+2. Vote Integrity (Encryption)
+3. Voting system availablity and DDOS resilience (50 requests from the same ip (LIMIT SET))
 4. Non Repudiation and Digital Signatures
 5. Incident Response and Disaster Recovery
 6. Voter Authentication
-7. Role Based Access Control
-8. Scalability and Performance of the voting system
-9. Auditability and Immutable Logging
-10. Vote Verifiability
-11. 24*7 SOC support for Monitoring and Detection
-12. Security patch management 
-13. Accessibility and Transparency
-14. Physical and endpoint security for polling terminals
-15. Geolocation Restrictions for Overseas Voting
-16. Third-Party Security Audits and Certification
-17. Insider Threat Detection and Mitigation
-18. Legal Compliance Safeguards
-19. Adaptive Threat Intelligence Integration
-20. Voter Education and Security Awareness
-21. Metadata Anonymisation and Traffic Camouflage
-22. Coercion Resistance and Safe Ballot Revocation
-23. Self Healing Cybersecurity Architecture
-24. Secure Remote Voting Environment (Sandbox)
-25. Secure Ballot Deletion Post Election
+7. Role Based Access Control for FRONTEND
+8. RBAC BACKEND 
+9. Tamper free Logging 
+10. Vote Verifiability 
+11. Automatic data backup for logs and audits
+12. Geolocation Restrictions for Overseas Voting
+13. API rate limiting (API Gateway) 
+14. Caching the frequently accessed data (like candidate lists, etc)
+15. Session Recovery (Stateless frontend and stateful backend)
+16. Database replication: Master - Slave - MySql Databases - can be done in docker too
+17. Saved Backups 
+18. Minimal maintainence downtime (multiple instances for critical services) (along with docker up think of something else)
+19. HTTPS/TLS everywhere (to prevent eavesdropping) 
+20. Input validation
