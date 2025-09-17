@@ -1,7 +1,7 @@
 SECURITY REQUIREMENTS 
 
-1. Voter Confidentiality 
-2. Vote Integrity
+1. Voter Confidentiality (Cryptography)
+2. Vote Integrity (
 3. Voting system availablity and DDOS resilience 
 4. Non Repudiation and Digital Signatures
 5. Incident Response and Disaster Recovery
@@ -14,24 +14,14 @@ SECURITY REQUIREMENTS
 12. Security patch management 
 13. Accessibility and Transparency
 14. Physical and endpoint security for polling terminals
-15.
-16.
-17.
-18.
-19.
-20.
-REQ1: AES-256 encryption for ballots (in transit & at rest)
-REQ2: Multi-factor authentication for admin logins
-REQ3: Immutable logging of vote DB write operations
-REQ4: Voter ID anonymisation before ballot storage
-REQ5: Server-side input validation (≤500ms)
-REQ6: 99.95% system uptime during voting period
-REQ7: Cryptographic key rotation every 6 months
-REQ8: Signature verification of ballot batches
-REQ9: Encrypted backups every 30 minutes
-REQ10: Real-time intrusion detection (alert ≤2min)
-REQ11: Vulnerability scanning & patching (≤72h)
-REQ12: Least privilege access control (monthly review)
-REQ13: Voter session timeout after 10 min inactivity
-REQ14: Digital signatures for published results
-REQ15: Annual 3rd-party penetration testing (fix ≤30d)
+15. Geolocation Restrictions for Overseas Voting
+16. Third-Party Security Audits and Certification
+17. Insider Threat Detection and Mitigation
+18. Legal Compliance Safeguards
+19. Adaptive Threat Intelligence Integration
+20. Voter Education and Security Awareness
+21. Metadata Anonymisation and Traffic Camouflage
+22. Coercion Resistance and Safe Ballot Revocation
+23. Self Healing Cybersecurity Architecture
+24. Secure Remote Voting Environment (Sandbox)
+25. Secure Ballot Deletion Post Election
