@@ -7,16 +7,16 @@ SECURITY REQUIREMENTS
 5. Incident Response and Disaster Recovery
 6. Voter Authentication
 7. Role Based Access Control for FRONTEND
-8. RBAC BACKEND 
+8. Role Based Access Control for BACKEND 
 9. Tamper free Logging 
 10. Vote Verifiability 
-11. Automatic data backup for logs and audits
-12. Geolocation Restrictions for Overseas Voting
+11. Data backup: Master - Slave - MySql Databases - can be done in docker too
+12. Geolocation Restrictions 
 13. API rate limiting (API Gateway) 
 14. Caching the frequently accessed data (like candidate lists, etc)
 15. Session Recovery (Stateless frontend and stateful backend)
-16. Database replication: Master - Slave - MySql Databases - can be done in docker too
-17. Saved Backups 
-18. Minimal maintainence downtime (multiple instances for critical services) (along with docker up think of something else)
-19. HTTPS/TLS everywhere (to prevent eavesdropping) 
-20. Input validation
+16. Saved Backups 
+17. Minimal maintainence downtime (multiple instances for critical services) (along with docker up, etc)
+18. HTTPS/TLS everywhere (to prevent eavesdropping) 
+19. Input Validation
+20. URL Validation
