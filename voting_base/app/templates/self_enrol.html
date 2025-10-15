@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% block content %}
+  <div class="card form-card">
+    <h1>Self Enrol</h1>
+    <form method="post" class="form">
+      <label class="field">
+        <span>Name</span>
+        <input name="name" required>
+      </label>
+      <label class="field">
+        <span>Address</span>
+        <input name="address" required>
+      </label>
+      <div class="actions">
+        <button class="btn" type="submit">Enrol</button>
+        <a class="btn btn-secondary" href="{{ url_for('index') }}">Back</a>
+      </div>
+    </form>
+  </div>
+{% endblock %}

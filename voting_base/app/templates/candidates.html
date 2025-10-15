@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block content %}
+  <div class="card">
+    <h1>Candidates</h1>
+    <table class="table">
+      <tr><th>ID</th><th>Name</th><th>Party</th><th>Order</th></tr>
+      {% for c in candidates %}
+        <tr><td>{{ c.id }}</td><td>{{ c.name }}</td><td>{{ c.party }}</td><td>{{ c.order or '' }}</td></tr>
+      {% else %}
+        <tr><td colspan="4">No candidates</td></tr>
+      {% endfor %}
+    </table>
+    <div class="actions">
+      <a class="btn" href="{{ url_for('add_candidate') }}">Add Candidate</a>
+      <a class="btn btn-secondary" href="{{ url_for('index') }}">Back</a>
+    </div>
+  </div>
+{% endblock %}
