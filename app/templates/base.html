@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title or 'Electronic Voting Prototype' }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <div class="brand">Electronic Voting Prototype</div>
+      <nav class="nav">
+        <a href="{{ url_for('index') }}">Home</a>
+        <div class="nav-group">
+          <span>Voters</span>
+          <div class="nav-menu">
+            <a href="{{ url_for('register_voter') }}">Register (AEC)</a>
+            <a href="{{ url_for('check_enrolment') }}">Check Enrolment</a>
+            <a href="{{ url_for('self_enrol') }}">Self Enrol</a>
+            <a href="{{ url_for('update_address') }}">Update Address</a>
+            <a href="{{ url_for('voters') }}">View Voters</a>
+          </div>
+        </div>
+        <div class="nav-group">
+          <span>Candidates</span>
+          <div class="nav-menu">
+            <a href="{{ url_for('add_candidate') }}">Add Candidate</a>
+            <a href="{{ url_for('candidates') }}">View Candidates</a>
+          </div>
+        </div>
+        <div class="nav-group">
+          <span>Voting</span>
+          <div class="nav-menu">
+            <a href="{{ url_for('vote') }}">Vote (In-country)</a>
+            <a href="{{ url_for('vote_overseas') }}">Vote (Overseas)</a>
+          </div>
+        </div>
+        <div class="nav-group">
+          <span>Results</span>
+          <div class="nav-menu">
+            <a href="{{ url_for('results') }}">Results</a>
+            <a href="{{ url_for('recount') }}">Recount</a>
+            <a href="{{ url_for('import_scanned') }}">Import Scanned</a>
+          </div>
+        </div>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="flash">
+          {% for m in messages %}<div class="flash-item">{{ m }}</div>{% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">&copy; Prototype</div>
+  </footer>
+</body>
+</html>

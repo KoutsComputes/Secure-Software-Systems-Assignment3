@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+  <div class="card">
+    <h1>Registered (Enrolled) Voters</h1>
+    <table class="table">
+      <tr><th>ID</th><th>Name</th><th>Address</th><th>Enrolled</th></tr>
+      {% for v in voters %}
+        <tr>
+          <td>{{ v.id }}</td>
+          <td>{{ v.name }}</td>
+          <td>{{ v.address }}</td>
+          <td>{{ 'Yes' if v.enrolled else 'No' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4">No enrolled voters found.</td></tr>
+      {% endfor %}
+    </table>
+    <div class="actions">
+      <a class="btn btn-secondary" href="{{ url_for('index') }}">Back</a>
+    </div>
+  </div>
+{% endblock %}
+
