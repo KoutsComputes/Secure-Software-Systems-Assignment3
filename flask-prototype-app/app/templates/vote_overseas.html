@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block content %}
+  <div class="card form-card">
+    <h1>Overseas Voting (Australian Missions)</h1>
+    <form method="post" class="form">
+      <label class="field">
+        <span>Mission Code</span>
+        <select name="mission_code" required>
+          <option value="">-- select mission --</option>
+          {% for m in missions %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span>Voter</span>
+        <select name="voter_id" required>
+          <option value="">-- select enrolled voter --</option>
+          {% for v in voters %}
+            <option value="{{ v.id }}">{{ v.name }} ({{ v.address }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="grid-2">
+        <div>
+          <h3>House of Representatives</h3>
+          <div class="list">
+            {% for c in candidates %}
+              <div class="list-item">#{{ c.id }} - {{ c.name }} ({{ c.party }})</div>
+            {% endfor %}
+          </div>
+          <textarea class="textarea" name="house_preferences" placeholder="e.g. 3,1,2"></textarea>
+        </div>
+        <div>
+          <h3>Senate</h3>
+          <label class="field">
+            <span>Above the line (party names)</span>
+            <textarea class="textarea" name="senate_above" placeholder="e.g. Party A, Party B"></textarea>
+          </label>
+          <label class="field">
+            <span>Below the line (candidate IDs)</span>
+            <textarea class="textarea" name="senate_below" placeholder="e.g. 7,5,6"></textarea>
+          </label>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn" type="submit">Submit Vote</button>
+        <a class="btn btn-secondary" href="{{ url_for('index') }}">Back</a>
+      </div>
+    </form>
+  </div>
+{% endblock %}

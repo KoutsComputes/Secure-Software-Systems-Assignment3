@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block content %}
+  <div class="card form-card">
+    <h1>Import Scanned Paper Ballots</h1>
+    <p class="hint">Paste CSV-like lines: <code>house_prefs;senate_above;senate_below</code>. Example:<br>
+    <code>3,1,2;Party A,Party B;7,5,6</code></p>
+    <form method="post" class="form">
+      <textarea class="textarea tall" name="csv_data" placeholder="3,1,2;Party A;7,5,6&#10;1,2,3;;"></textarea>
+      <div class="actions">
+        <button class="btn" type="submit">Import</button>
+        <a class="btn btn-secondary" href="{{ url_for('index') }}">Back</a>
+      </div>
+    </form>
+  </div>
+{% endblock %}

@@ -1,0 +1,6 @@
+[#] MySQL primary configuration for replication
+[mysqld]
+server-id=1
+log-bin=mysql-bin
+binlog_format=ROW
+binlog_do_db=flask_db

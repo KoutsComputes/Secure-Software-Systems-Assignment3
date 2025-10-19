@@ -1,0 +1,51 @@
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./:/app
+    environment:
+      - FLASK_DEBUG=1
+      - FLASK_APP=app.app:app
+      - DATABASE_URL=mysql+pymysql://user:password@db/flask_db
+      # - ALLOWED_COUNTRIES=AU
+      - AUDIT_LOG_PATH=/app/logs/audit.log
+      - AUDIT_LOG_KEY=jamesbond123
+    depends_on:
+      - db
+
+  db:
+    image: mysql:5.7
+    restart: always
+    command: --server-id=1 --log-bin=mysql-bin --binlog_format=ROW --binlog_do_db=flask_db
+    environment:
+      MYSQL_DATABASE: flask_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: root_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./mysql/init-master.sql:/docker-entrypoint-initdb.d/init-master.sql:ro
+
+  db_replica:
+    image: mysql:5.7
+    restart: always
+    command: --server-id=2 --relay-log=mysqld-relay-bin --read_only=1 --binlog_do_db=flask_db
+    environment:
+      MYSQL_DATABASE: flask_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: root_password
+    ports:
+      - "3307:3306"
+    depends_on:
+      - db
+    volumes:
+      - db_replica_data:/var/lib/mysql
+
+volumes:
+  db_data:
+  db_replica_data:
