@@ -55,6 +55,16 @@ class VoteReceipt(db.Model):
 def index():
     return render_template('index.html')
 
+# Theo: Incident Recovery - Health endpoint for Docker healthcheck
+# Validates app liveness and DB connectivity so Docker can auto-restart and order services.
+@app.route('/healthz')
+def healthz():
+    try:
+        db.session.execute('SELECT 1')
+        return jsonify({'status': 'ok', 'db': 'ok'}), 200
+    except Exception as e:  # pragma: no cover
+        return jsonify({'status': 'error', 'db': 'unhealthy', 'detail': str(e)}), 500
+
 # Voter Registration & Enrolment
 @app.route('/register_voter', methods=['GET', 'POST'])
 def register_voter():
