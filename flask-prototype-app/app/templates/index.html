@@ -44,5 +44,14 @@
         <a class="btn btn-secondary" href="{{ url_for('api_results') }}" target="_blank">JSON API</a>
       </div>
     </div>
+    {% if encryption_diagnostics_enabled %}
+    <div class="card">
+      <h2>Encryption Diagnostics</h2>
+      <p>Verify AES ballot confidentiality directly from the UI.</p>
+      <div class="links">
+        <a class="btn" href="{{ url_for('encryption_diagnostics') }}">Encryption Check</a>
+      </div>
+    </div>
+    {% endif %}
   </section>
 {% endblock %}

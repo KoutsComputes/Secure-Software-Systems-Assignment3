@@ -16,3 +16,9 @@ AUDIT_LOG_KEY = os.environ.get('AUDIT_LOG_KEY', SECRET_KEY)
 # Geolocation restrictions (ISO country codes, comma-separated). If empty, allow all.
 # When behind Cloudflare, 'CF-IPCountry' header will be used.
 ALLOWED_COUNTRIES = os.environ.get('ALLOWED_COUNTRIES', '')
+
+# Requirement 1: allow operators to override AES ballot key with a base64-encoded 32 byte value.
+BALLOT_ENCRYPTION_KEY = os.environ.get('BALLOT_ENCRYPTION_KEY', '')
+
+# Requirement 1 diagnostics: optional UI that proves ballots are encrypted end-to-end.
+ENABLE_ENCRYPTION_DIAGNOSTICS = os.environ.get('ENABLE_ENCRYPTION_DIAGNOSTICS', '0').lower() in {'1', 'true', 'yes'}

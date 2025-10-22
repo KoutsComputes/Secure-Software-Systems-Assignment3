@@ -5,8 +5,10 @@ from flask_sqlalchemy import SQLAlchemy
 # Support running as a script or as a package
 try:
     from security import get_audit_logger, is_country_allowed  # when running app/app.py directly
+    from crypto_utils import encrypt_ballot_value, decrypt_ballot_value
 except ImportError:  # pragma: no cover
     from .security import get_audit_logger, is_country_allowed  # when imported as package
+    from .crypto_utils import encrypt_ballot_value, decrypt_ballot_value  # Requirement 1: AES ballot helpers
 
 app = Flask(__name__)
 # Avoid import-time package/module name conflicts by loading config from file path
@@ -17,10 +19,20 @@ db = SQLAlchemy(app)
 # Simple list of allowed mission codes for overseas voting (prototype)
 ALLOWED_MISSIONS = {"AUS-LONDON", "AUS-WASHINGTON", "AUS-TOKYO", "AUS-SINGAPORE"}
 
+def _encryption_diagnostics_enabled() -> bool:
+    """Requirement 1: guard diagnostics so plaintext exposure only happens when explicitly allowed."""
+    return bool(app.config.get('ENABLE_ENCRYPTION_DIAGNOSTICS'))
+
 # Ensure tables exist when running via `flask run` (not just `python app.py`)
 @app.before_first_request
 def _init_db():
     db.create_all()
+
+@app.context_processor
+def _inject_feature_flags():
+    return {
+        'encryption_diagnostics_enabled': _encryption_diagnostics_enabled()
+    }
 
 # Models
 class Voter(db.Model):
@@ -172,11 +184,12 @@ def vote():
             flash('This voter has already voted.')
             return redirect(url_for('vote'))
 
+        # Requirement 1: encrypt ballot selections before saving so they never rest in plaintext.
         vote_obj = Vote(
             voter_id=voter_id,
-            house_preferences=house_preferences.strip(),
-            senate_above=senate_above.strip(),
-            senate_below=senate_below.strip(),
+            house_preferences=encrypt_ballot_value(house_preferences.strip()),
+            senate_above=encrypt_ballot_value(senate_above.strip()),
+            senate_below=encrypt_ballot_value(senate_below.strip()),
             source="electronic"
         )
         db.session.add(vote_obj)
@@ -218,11 +231,12 @@ def vote_overseas():
             flash('This voter has already voted.')
             return redirect(url_for('vote_overseas'))
 
+        # Requirement 1: re-use AES protection for overseas ballots.
         vote_obj = Vote(
             voter_id=voter_id,
-            house_preferences=house_preferences.strip(),
-            senate_above=senate_above.strip(),
-            senate_below=senate_below.strip(),
+            house_preferences=encrypt_ballot_value(house_preferences.strip()),
+            senate_above=encrypt_ballot_value(senate_above.strip()),
+            senate_below=encrypt_ballot_value(senate_below.strip()),
             source="electronic"
         )
         db.session.add(vote_obj)
@@ -244,19 +258,24 @@ def results():
     senate_candidate_tally = {}
 
     for v in all_votes:
+        # Requirement 1: decrypt inside memory to keep database and backups unlinkable.
+        house_plain = decrypt_ballot_value(v.house_preferences)
+        senate_above_plain = decrypt_ballot_value(v.senate_above)
+        senate_below_plain = decrypt_ballot_value(v.senate_below)
+
         # House: count first preference only (prototype simplification)
-        if v.house_preferences:
-            firsts = [s for s in v.house_preferences.split(',') if s.strip()]
+        if house_plain:
+            firsts = [s for s in house_plain.split(',') if s.strip()]
             if firsts:
                 first = firsts[0].strip()
                 house_tally[first] = house_tally.get(first, 0) + 1
         # Senate above the line: count one per party listed (prototype)
-        if v.senate_above:
-            for p in [s.strip() for s in v.senate_above.split(',') if s.strip()]:
+        if senate_above_plain:
+            for p in [s.strip() for s in senate_above_plain.split(',') if s.strip()]:
                 senate_party_tally[p] = senate_party_tally.get(p, 0) + 1
         # Senate below the line: count first preference only (prototype)
-        if v.senate_below:
-            firsts_b = [s for s in v.senate_below.split(',') if s.strip()]
+        if senate_below_plain:
+            firsts_b = [s for s in senate_below_plain.split(',') if s.strip()]
             if firsts_b:
                 first_b = firsts_b[0].strip()
                 senate_candidate_tally[first_b] = senate_candidate_tally.get(first_b, 0) + 1
@@ -296,7 +315,14 @@ def import_scanned():
             sa = parts[1] if len(parts) > 1 else ''
             sb = parts[2] if len(parts) > 2 else ''
             # Scanned ballots have no voter id; store with voter_id=0
-            v = Vote(voter_id=0, house_preferences=hp, senate_above=sa, senate_below=sb, source='scanned')
+            # Requirement 1: ensure imported paper ballots are encrypted identically to electronic ones.
+            v = Vote(
+                voter_id=0,
+                house_preferences=encrypt_ballot_value(hp),
+                senate_above=encrypt_ballot_value(sa),
+                senate_below=encrypt_ballot_value(sb),
+                source='scanned'
+            )
             db.session.add(v)
             count += 1
         db.session.commit()
@@ -314,16 +340,20 @@ def api_results():
     senate_party_tally = {}
     senate_candidate_tally = {}
     for v in all_votes:
-        if v.house_preferences:
-            firsts = [s for s in v.house_preferences.split(',') if s.strip()]
+        house_plain = decrypt_ballot_value(v.house_preferences)
+        senate_above_plain = decrypt_ballot_value(v.senate_above)
+        senate_below_plain = decrypt_ballot_value(v.senate_below)
+
+        if house_plain:
+            firsts = [s for s in house_plain.split(',') if s.strip()]
             if firsts:
                 first = firsts[0].strip()
                 house_tally[first] = house_tally.get(first, 0) + 1
-        if v.senate_above:
-            for p in [s.strip() for s in v.senate_above.split(',') if s.strip()]:
+        if senate_above_plain:
+            for p in [s.strip() for s in senate_above_plain.split(',') if s.strip()]:
                 senate_party_tally[p] = senate_party_tally.get(p, 0) + 1
-        if v.senate_below:
-            firsts_b = [s for s in v.senate_below.split(',') if s.strip()]
+        if senate_below_plain:
+            firsts_b = [s for s in senate_below_plain.split(',') if s.strip()]
             if firsts_b:
                 first_b = firsts_b[0].strip()
                 senate_candidate_tally[first_b] = senate_candidate_tally.get(first_b, 0) + 1
@@ -348,16 +378,20 @@ def recount():
     senate_party_tally = {}
     senate_candidate_tally = {}
     for v in all_votes:
-        if v.house_preferences:
-            prefs = [s.strip() for s in v.house_preferences.split(',') if s.strip()]
+        decrypted_house = decrypt_ballot_value(v.house_preferences)
+        decrypted_senate_above = decrypt_ballot_value(v.senate_above)
+        decrypted_senate_below = decrypt_ballot_value(v.senate_below)
+
+        if decrypted_house:
+            prefs = [s.strip() for s in decrypted_house.split(',') if s.strip()]
             prefs = [p for p in prefs if p not in excluded]
             if prefs:
                 house_tally[prefs[0]] = house_tally.get(prefs[0], 0) + 1
-        if v.senate_above:
-            for p in [s.strip() for s in v.senate_above.split(',') if s.strip()]:
+        if decrypted_senate_above:
+            for p in [s.strip() for s in decrypted_senate_above.split(',') if s.strip()]:
                 senate_party_tally[p] = senate_party_tally.get(p, 0) + 1
-        if v.senate_below:
-            prefs_b = [s.strip() for s in v.senate_below.split(',') if s.strip()]
+        if decrypted_senate_below:
+            prefs_b = [s.strip() for s in decrypted_senate_below.split(',') if s.strip()]
             prefs_b = [p for p in prefs_b if p not in excluded]
             if prefs_b:
                 senate_candidate_tally[prefs_b[0]] = senate_candidate_tally.get(prefs_b[0], 0) + 1
@@ -376,8 +410,8 @@ def recount():
     return render_template('recount.html',
                            excluded=','.join(sorted(excluded)) if excluded else '',
                            house_display=house_display,
-                           senate_party_display=senate_party_display,
-                           senate_candidate_display=senate_candidate_display)
+                            senate_party_display=senate_party_display,
+                            senate_candidate_display=senate_candidate_display)
 
 # Vote verifiability endpoint
 @app.route('/verify', methods=['GET', 'POST'])
@@ -398,6 +432,30 @@ def verify():
 def audit_verify():
     ok = get_audit_logger().verify()
     return jsonify({'audit_log_valid': ok})
+
+
+@app.route('/encryption_diagnostics')
+def encryption_diagnostics():
+    if not _encryption_diagnostics_enabled():
+        return abort(404)
+
+    # Requirement 1: display how AES wraps ballots, while warning this view is for test-only usage.
+    sample_plain = "1,2,3"
+    sample_cipher = encrypt_ballot_value(sample_plain)
+
+    latest_vote = Vote.query.order_by(Vote.id.desc()).first()
+    stored_cipher = latest_vote.house_preferences if latest_vote else ""
+    stored_plain = decrypt_ballot_value(stored_cipher) if stored_cipher else ""
+
+    return render_template(
+        'encryption_diagnostics.html',
+        sample_plain=sample_plain,
+        sample_cipher=sample_cipher,
+        stored_cipher=stored_cipher,
+        stored_plain=stored_plain,
+        diagnostics_enabled=True,
+        latest_vote_id=latest_vote.id if latest_vote else None
+    )
 
 if __name__ == "__main__":
     with app.app_context():
