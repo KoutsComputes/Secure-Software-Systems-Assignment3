@@ -24,27 +24,29 @@ flask-prototype-app
 
 ## Quick Start (Docker)
 
-The repository is pre-configured for a Docker-only workflow; no manual key management or flags are required.
+The repository is pre-configured for a Docker-only, no-auth demo workflow; no manual key management or credentials are required.
 
 ```bash
 docker compose up --build
 ```
 
-Then open [http://localhost:5000](http://localhost:5000).
+Then open [http://localhost:5000/home](http://localhost:5000/home).
 
 Behind the scenes:
-- `docker-entrypoint.sh` auto-generates and persists an AES ballot key (Requirement 1) in `/app/.ballot_encryption_key` unless `BALLOT_ENCRYPTION_KEY` is already defined.
+- `docker-entrypoint.sh` auto-generates and persists an AES ballot key in `/app/.ballot_encryption_key` unless `BALLOT_ENCRYPTION_KEY` is already defined.
 - `ENABLE_ENCRYPTION_DIAGNOSTICS` is automatically set to `1` so you can verify secrecy via the UI without extra steps.
+- Global login/MFA enforcement is disabled for the demo to keep usage simple; AES-GCM ballot encryption still applies to all stored ballots.
 - The compose file wires the Flask app to MySQL, but you can remove `DATABASE_URL` and the database services to fall back to SQLite if desired.
 
 ### Verifying AES Encryption via the UI
 
-1. After the stack starts, cast a vote using the regular voting form.
-2. Navigate to **Encryption Check** on the home page (visible because diagnostics are enabled in Docker).
-3. The diagnostics view shows:
+1. After the stack starts, open [http://localhost:5000/home](http://localhost:5000/home).
+2. Cast a vote using the regular voting form.
+3. Click the **Encryption Check** card on the home page (visible because diagnostics are enabled; no login required).
+4. The diagnostics view shows:
    - A sample plaintext and the corresponding AES-GCM ciphertext, demonstrating nonce randomness.
    - The most recent stored ballot, displaying both the encrypted database value and the decrypted plaintext rendered only in-memory.
-4. When you finish testing, disable diagnostics by setting `ENABLE_ENCRYPTION_DIAGNOSTICS=0` (or removing it) in your deployment configuration so plaintext never appears in production.
+5. When you finish testing, disable diagnostics by setting `ENABLE_ENCRYPTION_DIAGNOSTICS=0` (or removing it) in your deployment configuration so plaintext never appears in production.
 
 ## Manual (Non-Docker) Setup
 

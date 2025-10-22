@@ -17,10 +17,10 @@ AUDIT_LOG_KEY = os.environ.get('AUDIT_LOG_KEY', SECRET_KEY)
 # When behind Cloudflare, 'CF-IPCountry' header will be used.
 ALLOWED_COUNTRIES = os.environ.get('ALLOWED_COUNTRIES', '')
 
-# Requirement 1: allow operators to override AES ballot key with a base64-encoded 32 byte value.
+# Gurveen - Issue #1: allow operators to override AES ballot key with a base64-encoded 32 byte value.
 BALLOT_ENCRYPTION_KEY = os.environ.get('BALLOT_ENCRYPTION_KEY', '')
 
-# Requirement 1 diagnostics: optional UI that proves ballots are encrypted end-to-end.
+# Gurveen - Issue #1 diagnostics: optional UI that proves ballots are encrypted end-to-end.
 ENABLE_ENCRYPTION_DIAGNOSTICS = os.environ.get('ENABLE_ENCRYPTION_DIAGNOSTICS', '0').lower() in {'1', 'true', 'yes'}
 # Theo: Issue 6 - Harden session cookies (override via env if needed)
 SESSION_COOKIE_HTTPONLY = True
@@ -29,3 +29,7 @@ SESSION_COOKIE_SECURE = os.environ.get('SESSION_COOKIE_SECURE', 'false').lower()
 
 # Theo: Issue 6 - Feature flag to enforce MFA on /vote
 ENFORCE_MFA_ON_VOTE = os.environ.get('ENFORCE_MFA_ON_VOTE', 'false').lower() == 'true'
+
+# Gurveen - Issue #1: default admin bootstrap so UI login works without CLI seeding
+DEFAULT_ADMIN_USERNAME = os.environ.get('DEFAULT_ADMIN_USERNAME', 'admin')
+DEFAULT_ADMIN_PASSWORD = os.environ.get('DEFAULT_ADMIN_PASSWORD', 'USERgroup%11')

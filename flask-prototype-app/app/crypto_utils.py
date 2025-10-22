@@ -11,7 +11,7 @@ _NONCE_SIZE = 12  # AES-GCM standard nonce length
 
 def _derive_aes_key() -> bytes:
     """
-    Requirement 1: derive a static-length AES key so ballots remain encrypted at rest.
+    Gurveen - Issue #1: derive a static-length AES key so ballots remain encrypted at rest.
 
     - Prefer an explicit base64 value via BALLOT_ENCRYPTION_KEY
     - Fallback to hashing SECRET_KEY for developer convenience (should be overridden in prod)
@@ -28,7 +28,7 @@ def _derive_aes_key() -> bytes:
 
 
 def encrypt_ballot_value(plaintext: str) -> str:
-    """Requirement 1: wrap ballot choices with AES-GCM so storage never reveals voter intent."""
+    """Gurveen - Issue #1: wrap ballot choices with AES-GCM so storage never reveals voter intent."""
     if not plaintext:
         return ""
 
@@ -40,7 +40,7 @@ def encrypt_ballot_value(plaintext: str) -> str:
 
 
 def decrypt_ballot_value(encoded_ciphertext: str) -> str:
-    """Requirement 1: recover plaintext choices only inside trusted server memory."""
+    """Gurveen - Issue #1: recover plaintext choices only inside trusted server memory."""
     if not encoded_ciphertext:
         return ""
 
