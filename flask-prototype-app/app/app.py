@@ -1,7 +1,12 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, abort
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, abort, session  # Theo: Issue 6 - session for auth
 import os
 import uuid
 from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash  # Theo: Issue 6 - password hashing
+import pyotp  # Theo: Issue 6 - TOTP MFA
+import qrcode  # Theo: Issue 6 - QR code generation for TOTP setup
+import base64  # Theo: Issue 6 - Encode QR image for template
+from io import BytesIO  # Theo: Issue 6 - In-memory image buffer
 # Support running as a script or as a package
 try:
     from security import get_audit_logger, is_country_allowed  # when running app/app.py directly
@@ -27,6 +32,30 @@ def _encryption_diagnostics_enabled() -> bool:
 @app.before_first_request
 def _init_db():
     db.create_all()
+    # Theo: Issue 8 - Seed default roles (DB‑level RBAC)
+    try:
+        existing = {r.name for r in Role.query.all()}
+    except Exception:
+        existing = set()
+    for rname, desc in (
+        ('voter', 'Regular voter with minimal privileges'),
+        ('clerk', 'Polling clerk: verify enrolment, assist voters'),
+        ('admin', 'System admin: manage candidates and system areas'),
+    ):
+        if rname not in existing:
+            db.session.add(Role(name=rname, description=desc))
+    db.session.commit()
+    # Theo: Issue 8 - Optional admin bootstrap via env (for backend RBAC testing)
+    admin_user = os.environ.get('BOOTSTRAP_ADMIN_USERNAME')
+    admin_pass = os.environ.get('BOOTSTRAP_ADMIN_PASSWORD')
+    if admin_user and admin_pass:
+        if not UserAccount.query.filter_by(username=admin_user).first():
+            db.session.add(UserAccount(
+                username=admin_user,
+                password_hash=generate_password_hash(admin_pass),
+                role='admin'
+            ))
+            db.session.commit()
 
 @app.context_processor
 def _inject_feature_flags():
@@ -61,11 +90,323 @@ class VoteReceipt(db.Model):
     vote_id = db.Column(db.Integer, db.ForeignKey('vote.id'), nullable=False)
     receipt = db.Column(db.String(64), unique=True, nullable=False)
 
+# Theo: Issue 6 - Authentication model (password + TOTP secret)
+class UserAccount(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    mfa_secret = db.Column(db.String(32), nullable=True)
+    mfa_enabled = db.Column(db.Boolean, default=False)
+    voter_id = db.Column(db.Integer, db.ForeignKey('voter.id'), nullable=True)
+    # Theo: Issue 8 - RBAC in database: role persisted on the user
+    role = db.Column(db.String(32), db.ForeignKey('role.name'), nullable=False, default='voter')
+
+# Theo: Issue 8 - Roles table in database (separate DB layer for RBAC)
+class Role(db.Model):
+    name = db.Column(db.String(32), primary_key=True)
+    description = db.Column(db.String(200))
+
 # Routes
 
 @app.route('/')
 def index():
+    # Theo: Issue 6/7 - Default UX: send users to auth first
+    # If not logged in, show login; if logged in, go to role dashboard.
+    user = _current_user()
+    if not user:
+        return redirect(url_for('auth_login'))
+    return redirect(url_for('dashboard_root'))
+
+# Theo: Issue 7 - Preserve access to the original prototype homepage
+@app.route('/home')
+def home_landing():
     return render_template('index.html')
+
+# Theo: Incident Recovery - Health endpoint for Docker healthcheck
+# Validates app liveness and DB connectivity so Docker can auto-restart and order services.
+@app.route('/healthz')
+def healthz():
+    try:
+        db.session.execute('SELECT 1')
+        return jsonify({'status': 'ok', 'db': 'ok'}), 200
+    except Exception as e:  # pragma: no cover
+        return jsonify({'status': 'error', 'db': 'unhealthy', 'detail': str(e)}), 500
+
+# Theo: Issue 6 - helpers for authentication state
+def _current_user():
+    uid = session.get('user_id')
+    if not uid:
+        return None
+    return UserAccount.query.get(uid)
+
+def login_required_and_mfa(fn):
+    from functools import wraps
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        user = _current_user()
+        if not user:
+            flash('Please log in to continue.')
+            return redirect(url_for('auth_login'))
+        if user.mfa_enabled and not session.get('mfa_ok'):
+            flash('Please complete MFA verification.')
+            return redirect(url_for('auth_mfa_prompt'))
+        return fn(*args, **kwargs)
+    return wrapper
+
+# Theo: Issue 8 - API RBAC decorator for role-based access control (no JWT)
+def role_required(*roles):
+    from functools import wraps
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            user = _current_user()
+            if not user:
+                flash('Please log in to continue.')
+                return redirect(url_for('auth_login'))
+            if user.role not in roles:
+                flash('You do not have permission to access this page.')
+                return abort(403)
+            return fn(*args, **kwargs)
+        return wrapper
+    return decorator
+
+# Theo: Issue 7 - Inject current user/role into templates for nav rendering
+@app.context_processor
+def _inject_user_role():
+    user = _current_user()
+    return {
+        'current_user': user,
+        'user_role': (user.role if user else None)
+    }
+
+# Theo: Issue 6/7 - Global strict auth: require login + MFA for all non-auth routes
+@app.before_request
+def _global_auth_mfa_enforcement():
+    # Whitelisted endpoints that must remain accessible
+    whitelist = {
+        'auth_login', 'auth_register', 'auth_mfa_setup', 'auth_mfa_verify', 'auth_mfa_prompt',
+        'auth_logout',  # Theo: Allow logout even if MFA not completed yet
+        'healthz', 'static'
+    }
+    if request.endpoint in whitelist or (request.endpoint or '').startswith('static'):
+        return
+    user = _current_user()
+    if not user:
+        # Not logged in: send to login
+        return redirect(url_for('auth_login'))
+    if not user.mfa_enabled and request.endpoint not in {'auth_mfa_setup', 'auth_mfa_verify'}:
+        # Enforce MFA setup first
+        flash('MFA setup required before using the system.')
+        return redirect(url_for('auth_mfa_setup'))
+    if user.mfa_enabled and not session.get('mfa_ok') and request.endpoint not in {'auth_mfa_prompt'}:
+        # Enforce MFA verification for this session
+        flash('Please complete MFA verification.')
+        return redirect(url_for('auth_mfa_prompt'))
+
+# Theo: Issue 6 - Optionally enforce MFA on original /vote via feature flag
+@app.before_request
+def _enforce_mfa_on_vote():
+    try:
+        enforce = app.config.get('ENFORCE_MFA_ON_VOTE', False)
+    except Exception:
+        enforce = False
+    if not enforce:
+        return
+    if request.endpoint == 'vote':
+        user = _current_user()
+        if not user:
+            flash('Please log in to continue.')
+            return redirect(url_for('auth_login'))
+        # Theo: Issue 6 - Strict mode: require MFA to be set up for voting
+        if not user.mfa_enabled:
+            flash('MFA setup required before voting.')
+            return redirect(url_for('auth_mfa_setup'))
+        if user.mfa_enabled and not session.get('mfa_ok'):
+            flash('Please complete MFA verification.')
+            return redirect(url_for('auth_mfa_prompt'))
+
+# Theo: Issue 6 - Registration (prototype)
+@app.route('/auth/register', methods=['GET', 'POST'])
+def auth_register():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
+        if not username or not password or len(password) < 12:
+            flash('Username required and password must be at least 12 characters.')
+            return redirect(url_for('auth_register'))
+        if UserAccount.query.filter_by(username=username).first():
+            flash('Username already exists.')
+            return redirect(url_for('auth_register'))
+        # Theo: Issue 7/8 - default role is 'voter' (DB RBAC); can be elevated by admin later
+        user = UserAccount(
+            username=username,
+            password_hash=generate_password_hash(password),
+            role='voter'
+        )
+        db.session.add(user)
+        db.session.commit()
+        flash('Account created. Please log in and set up MFA.')
+        return redirect(url_for('auth_login'))
+    return render_template('auth_register.html')
+
+# Theo: Issue 6 - Login (password step)
+@app.route('/auth/login', methods=['GET', 'POST'])
+def auth_login():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
+        user = UserAccount.query.filter_by(username=username).first()
+        if not user or not check_password_hash(user.password_hash, password):
+            flash('Invalid username or password.')
+            return redirect(url_for('auth_login'))
+        session['user_id'] = user.id
+        # If user has MFA enabled, go to MFA prompt; otherwise mark OK
+        if user.mfa_enabled:
+            session['mfa_ok'] = False
+            return redirect(url_for('auth_mfa_prompt'))
+        session['mfa_ok'] = True
+        flash('Logged in.')
+        return redirect(url_for('index'))
+    return render_template('auth_login.html')
+
+# Theo: Issue 6 - MFA setup (generate TOTP secret and show otpauth URI)
+@app.route('/auth/mfa-setup', methods=['GET'])
+def auth_mfa_setup():
+    user = _current_user()
+    if not user:
+        return redirect(url_for('auth_login'))
+    if not user.mfa_secret:
+        user.mfa_secret = pyotp.random_base32()
+        db.session.commit()
+    totp = pyotp.TOTP(user.mfa_secret)
+    issuer = 'SecureVotingApp'
+    otpauth_uri = totp.provisioning_uri(name=user.username, issuer_name=issuer)
+    # Theo: Issue 6 - Generate QR code PNG as data URI for easy scanning
+    try:
+        img = qrcode.make(otpauth_uri)
+        buf = BytesIO()
+        img.save(buf, format='PNG')
+        qr_b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+    except Exception:
+        qr_b64 = None  # fallback: just show URI/secret
+    return render_template('auth_mfa_setup.html', secret=user.mfa_secret, otpauth_uri=otpauth_uri, issuer=issuer, qr_b64=qr_b64)
+
+# Theo: Issue 6 - MFA verify (enable TOTP after first successful code)
+@app.route('/auth/mfa-verify', methods=['POST'])
+def auth_mfa_verify():
+    user = _current_user()
+    if not user:
+        return redirect(url_for('auth_login'))
+    code = request.form.get('code', '').strip()
+    if not user.mfa_secret:
+        flash('No MFA secret set. Visit setup first.')
+        return redirect(url_for('auth_mfa_setup'))
+    totp = pyotp.TOTP(user.mfa_secret)
+    if totp.verify(code, valid_window=1):
+        user.mfa_enabled = True
+        db.session.commit()
+        session['mfa_ok'] = True
+        flash('MFA enabled and verified.')
+        return redirect(url_for('index'))
+    else:
+        flash('Invalid code. Try again.')
+        return redirect(url_for('auth_mfa_setup'))
+
+# Theo: Issue 6 - MFA prompt during login
+@app.route('/auth/mfa', methods=['GET', 'POST'])
+def auth_mfa_prompt():
+    user = _current_user()
+    if not user:
+        return redirect(url_for('auth_login'))
+    if request.method == 'POST':
+        code = request.form.get('code', '').strip()
+        totp = pyotp.TOTP(user.mfa_secret or '')
+        if user.mfa_enabled and totp.verify(code, valid_window=1):
+            session['mfa_ok'] = True
+            flash('MFA verified. You are logged in.')
+            return redirect(url_for('index'))
+        flash('Invalid code.')
+    return render_template('auth_mfa_prompt.html')
+
+# Theo: Issue 6 - Logout
+@app.route('/auth/logout')
+def auth_logout():
+    session.clear()
+    flash('Logged out.')
+    return redirect(url_for('index'))
+
+# Theo: Issue 6 - Protected voting route that enforces password + MFA
+@app.route('/secure/vote', methods=['GET', 'POST'])
+@login_required_and_mfa
+def secure_vote():
+    # Reuse the existing vote handler under auth protection
+    return vote()
+
+# Theo: Issue 7 - Frontend RBAC: role-specific dashboards (no JWT)
+@app.route('/dashboard')
+def dashboard_root():
+    user = _current_user()
+    if not user:
+        return redirect(url_for('auth_login'))
+    if user.role == 'admin':
+        return redirect(url_for('dashboard_admin'))
+    if user.role == 'clerk':
+        return redirect(url_for('dashboard_clerk'))
+    return redirect(url_for('dashboard_voter'))
+
+@app.route('/dashboard/voter')
+@role_required('voter', 'clerk', 'admin')  # voters and higher
+def dashboard_voter():
+    return render_template('dashboard_voter.html')
+
+@app.route('/dashboard/clerk')
+@role_required('clerk', 'admin')
+def dashboard_clerk():
+    return render_template('dashboard_clerk.html')
+
+@app.route('/dashboard/admin')
+@role_required('admin')
+def dashboard_admin():
+    return render_template('dashboard_admin.html')
+
+# Theo: Issue 8 - Admin: manage user roles (API + UI)
+@app.route('/admin/users', methods=['GET', 'POST'])
+@role_required('admin')
+def admin_users():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        new_role = request.form.get('role', '').strip()
+        u = UserAccount.query.filter_by(username=username).first()
+        if not u:
+            flash('User not found.')
+            return redirect(url_for('admin_users'))
+        if not Role.query.get(new_role):
+            flash('Invalid role.')
+            return redirect(url_for('admin_users'))
+        u.role = new_role
+        db.session.commit()
+        flash('Role updated.')
+        return redirect(url_for('admin_users'))
+    users = UserAccount.query.order_by(UserAccount.username).all()
+    roles = Role.query.order_by(Role.name).all()
+    # Simple inline admin UI (Theo)
+    options = ''.join(f'<option value="{r.name}">{r.name}</option>' for r in roles)
+    rows = ''.join(
+        f'<tr><td>{u.username}</td><td>{u.role}</td>'
+        f'<td><form method="post" style="display:inline">'
+        f'<input type="hidden" name="username" value="{u.username}">' \
+        f'<select name="role">{options}</select> <button type="submit">Change</button></form></td></tr>'
+        for u in users
+    )
+    return f"""
+    <!-- Theo: Issue 8 - Admin user role management -->
+    <h2>Manage User Roles</h2>
+    <table border="1" cellpadding="6">
+      <tr><th>Username</th><th>Role</th><th>Action</th></tr>
+      {rows}
+    </table>
+    <p><a href='{url_for('dashboard_admin')}'>Back to admin dashboard</a></p>
+    """
 
 # Voter Registration & Enrolment
 @app.route('/register_voter', methods=['GET', 'POST'])
@@ -136,6 +477,7 @@ def update_address():
 
 # Candidate Management
 @app.route('/add_candidate', methods=['GET', 'POST'])
+@role_required('admin')  # Theo: Issue 8 - API RBAC enforcement (admin only)
 def add_candidate():
     if request.method == 'POST':
         name = request.form['name']
@@ -302,6 +644,7 @@ def results():
 
 # Import scanned paper ballot results (CSV paste for prototype)
 @app.route('/import_scanned', methods=['GET', 'POST'])
+@role_required('admin')  # Theo: Issue 8 - API RBAC: restrict import to admins
 def import_scanned():
     if request.method == 'POST':
         data = request.form.get('csv_data', '').strip()
@@ -429,6 +772,7 @@ def verify():
 
 # Audit log verification (admin)
 @app.route('/audit/verify')
+@role_required('admin')  # Theo: Issue 8 - API RBAC: admin-only audit verification
 def audit_verify():
     ok = get_audit_logger().verify()
     return jsonify({'audit_log_valid': ok})

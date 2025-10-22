@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+  <!-- Theo: Issue 7 - Frontend RBAC: Clerk dashboard (styled) -->
+  <section class="grid-3">
+    <div class="card">
+      <h2>Voter Enrolment</h2>
+      <div class="links">
+        <a class="btn" href="{{ url_for('check_enrolment') }}">Verify Enrolment</a>
+        <a class="btn btn-secondary" href="{{ url_for('voters') }}">View Enrolled Voters</a>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Account</h2>
+      <a class="btn btn-secondary" href="{{ url_for('auth_logout') }}">Logout</a>
+    </div>
+  </section>
+{% endblock %}

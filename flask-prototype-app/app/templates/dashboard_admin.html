@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block content %}
+  <!-- Theo: Issue 7 - Frontend RBAC: Admin dashboard (styled) -->
+  <section class="grid-3">
+    <div class="card">
+      <h2>Candidate Management</h2>
+      <div class="links">
+        <a class="btn" href="{{ url_for('add_candidate') }}">Add Candidate</a>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Operations</h2>
+      <div class="links">
+        <a class="btn" href="{{ url_for('import_scanned') }}">Import Scanned Ballots</a>
+        <a class="btn btn-secondary" href="{{ url_for('audit_verify') }}">Verify Audit Log</a>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Access Control</h2>
+      <div class="links">
+        <a class="btn" href="{{ url_for('admin_users') }}">Manage User Roles</a>
+        <a class="btn btn-secondary" href="{{ url_for('auth_logout') }}">Logout</a>
+      </div>
+    </div>
+  </section>
+{% endblock %}
