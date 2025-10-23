@@ -67,4 +67,15 @@ if [ -z "${RATE_LIMIT_DEFAULT:-}" ]; then
     export RATE_LIMIT_DEFAULT="50 per minute"
 fi
 
+# Gurveen - Issue #4: ensure the Ed25519 signing key vault exists before Gunicorn starts, so every service/process
+# immediately has durable key material to produce verifiable digital signatures that satisfy non-repudiation guarantees.
+if [ -z "${DIGITAL_SIGNATURE_KEY_DIR:-}" ]; then
+    export DIGITAL_SIGNATURE_KEY_DIR="/app/app/signing_keys"
+fi
+mkdir -p "${DIGITAL_SIGNATURE_KEY_DIR}"
+chmod 700 "${DIGITAL_SIGNATURE_KEY_DIR}" || true
+if [ -z "${DIGITAL_SIGNATURE_AUTO_PROVISION:-}" ]; then
+    export DIGITAL_SIGNATURE_AUTO_PROVISION="true"
+fi
+
 exec "$@"

@@ -25,5 +25,13 @@
       {% endfor %}
     </tbody>
   </table>
+
+  <div class="integrity-actions">
+    <form method="post">
+      <input type="hidden" name="action" value="reset_audit_log">
+      <button type="submit" class="btn btn-secondary">Reset Audit Log (testing only)</button>
+    </form>
+    <p class="muted">Always load this page via <code>https://</code> so the HTTPS checks can pass. Resetting moves the current audit log aside and starts a fresh chain for development verification.</p>
+  </div>
 </section>
 {% endblock %}

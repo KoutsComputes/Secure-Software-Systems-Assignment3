@@ -43,27 +43,27 @@ The app simulates the core workflow of an Australian federal election, including
 
 ```
 Secure-Software-Systems-Assignment3/
-├─ app/
-│  ├─ app.py               # Main application, models & routes
-│  ├─ config.py            # Database configuration (SQLite/MySQL)
-│  ├─ static/style.css     # Stylesheet
-│  └─ templates/           # HTML templates
-│     ├─ index.html
-│     ├─ register_voter.html
-│     ├─ check_enrolment.html
-│     ├─ self_enrol.html
-│     ├─ update_address.html
-│     ├─ add_candidate.html
-│     ├─ candidates.html
-│     ├─ vote.html
-│     ├─ vote_overseas.html
-│     ├─ results.html
-│     ├─ recount.html
-│     └─ import_scanned.html
-├─ requirements.txt        # Python dependencies
-├─ Dockerfile              # Container build
-├─ docker-compose.yml      # Multi-container setup
-└─ README.md               # Project info
+|-- app/
+|  |-- app.py               # Main application, models & routes
+|  |-- config.py            # Database configuration (SQLite/MySQL)
+|  |-- static/style.css     # Stylesheet
+|  `-- templates/           # HTML templates
+|     |-- index.html
+|     |-- register_voter.html
+|     |-- check_enrolment.html
+|     |-- self_enrol.html
+|     |-- update_address.html
+|     |-- add_candidate.html
+|     |-- candidates.html
+|     |-- vote.html
+|     |-- vote_overseas.html
+|     |-- results.html
+|     |-- recount.html
+|     `-- import_scanned.html
+|-- requirements.txt        # Python dependencies
+|-- Dockerfile              # Container build
+|-- docker-compose.yml      # Multi-container setup
+`-- README.md               # Project info
 ```
 
 ---

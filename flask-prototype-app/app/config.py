@@ -13,6 +13,16 @@ SQLALCHEMY_TRACK_MODIFICATIONS = False
 AUDIT_LOG_PATH = os.environ.get('AUDIT_LOG_PATH', os.path.join(os.path.dirname(__file__), 'logs', 'audit.log'))
 AUDIT_LOG_KEY = os.environ.get('AUDIT_LOG_KEY', SECRET_KEY)
 
+# Gurveen - Issue #4: persist per-actor digital signature keys alongside the application so auditors can independently
+# confirm which human or service signed a log entry, even after container redeploys.
+DIGITAL_SIGNATURE_KEY_DIR = os.environ.get(
+    'DIGITAL_SIGNATURE_KEY_DIR',
+    os.path.join(os.path.dirname(__file__), 'signing_keys')
+)
+# Gurveen - Issue #4: allow operators to disable automatic provisioning when an external HSM or key management workflow
+# will supply long-term signer credentials during runtime.
+DIGITAL_SIGNATURE_AUTO_PROVISION = os.environ.get('DIGITAL_SIGNATURE_AUTO_PROVISION', 'true').lower() in {'1', 'true', 'yes'}
+
 # Geolocation restrictions (ISO country codes, comma-separated). If empty, allow all.
 # When behind Cloudflare, 'CF-IPCountry' header will be used.
 ALLOWED_COUNTRIES = os.environ.get('ALLOWED_COUNTRIES', '')
@@ -30,9 +40,14 @@ SESSION_COOKIE_SECURE = os.environ.get('SESSION_COOKIE_SECURE', 'false').lower()
 # Gurveen - Issue #2: TLS configuration (development/runtime)
 # Gurveen - Issue #2: Provide paths to certificate and private key to enable HTTPS using Flask's built-in SSL context.
 # Gurveen - Issue #2: Use self-signed certs for local/dev; supply real certs in production via reverse proxy/terminator.
-TLS_CERT_FILE = os.environ.get('TLS_CERT_FILE', '')
-TLS_KEY_FILE = os.environ.get('TLS_KEY_FILE', '')
-TLS_ENABLE = os.environ.get('TLS_ENABLE', 'false').lower() in {'1', 'true', 'yes'}
+_TLS_CERT_DIR = os.path.join(os.path.dirname(__file__), 'certs')
+TLS_CERT_FILE = os.environ.get('TLS_CERT_FILE', os.path.join(_TLS_CERT_DIR, 'server.crt'))
+TLS_KEY_FILE = os.environ.get('TLS_KEY_FILE', os.path.join(_TLS_CERT_DIR, 'server.key'))
+_tls_enable_env = os.environ.get('TLS_ENABLE')
+if _tls_enable_env is None:
+    TLS_ENABLE = False
+else:
+    TLS_ENABLE = _tls_enable_env.lower() in {'1', 'true', 'yes'}
 
 # Theo: Issue 6 - Feature flag to enforce MFA on /vote
 ENFORCE_MFA_ON_VOTE = os.environ.get('ENFORCE_MFA_ON_VOTE', 'false').lower() == 'true'

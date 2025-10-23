@@ -21,7 +21,7 @@
       </div>
       <form method="post" action="{{ url_for('auth_mfa_verify') }}">
         <div class="form-row">
-          <label>6‑digit code</label>
+          <label>6-digit code</label>
           <input name="code" pattern="\d{6}" maxlength="6" required />
         </div>
         <button type="submit" class="btn">Verify & Enable</button>

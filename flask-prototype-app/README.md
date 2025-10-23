@@ -6,20 +6,20 @@ Basic working prototype for an Australian federal election e-voting system cover
 
 ```
 flask-prototype-app
-├─ app
-│  ├─ app.py               # main app, models + routes
-│  ├─ config.py            # defaults to SQLite, supports DATABASE_URL
-│  ├─ crypto_utils.py      # AES helpers
-│  ├─ static/style.css
-│  └─ templates/
-│     ├─ index.html
-│     ├─ encryption_diagnostics.html
-│     └─ ...
-├─ docker-entrypoint.sh   #automation for docker
-├─ docker-compose.yml
-├─ Dockerfile
-├─ requirements.txt
-└─ README.md
+|-- app
+|  |-- app.py               # main app, models + routes
+|  |-- config.py            # defaults to SQLite, supports DATABASE_URL
+|  |-- crypto_utils.py      # AES helpers
+|  |-- static/style.css
+|  `-- templates/
+|     |-- index.html
+|     |-- encryption_diagnostics.html
+|     `-- ...
+|-- docker-entrypoint.sh   #automation for docker
+|-- docker-compose.yml
+|-- Dockerfile
+|-- requirements.txt
+`-- README.md
 ```
 
 ## Quick Start (Docker)
@@ -27,9 +27,9 @@ flask-prototype-app
 The repository is pre-configured for a Docker-only demo workflow; only the security diagnostics require admin login.
 
 > **Default Accounts (fixed in `app/config.py`)**  
-> - Admin — username `admin`, password `SecureAdm#12`  
-> - Clerk — username `clerk`, password `Clerk#12AB34`  
-> - Voter — username `voter`, password `Voter#56CD78`  
+> - Admin - username `admin`, password `SecureAdm#12`  
+> - Clerk - username `clerk`, password `Clerk#12AB34`  
+> - Voter - username `voter`, password `Voter#56CD78`  
 
 Use the admin account for the diagnostic dashboards; clerk and voter accounts help exercise RBAC flows.
 
@@ -37,14 +37,14 @@ Use the admin account for the diagnostic dashboards; clerk and voter accounts he
 docker compose up --build
 ```
 
-Point your browser at [http://localhost:5000/home](http://localhost:5000/home). HAProxy fans traffic across two Flask replicas, so the site stays responsive even if one container restarts under load.
+Point your browser at [https://localhost:5000/home](https://localhost:5000/home) and accept the self-signed certificate that is generated automatically for local testing. HAProxy fans traffic across two Flask replicas, so the site stays responsive even if one container restarts under load.
 
 - `docker-entrypoint.sh` still auto-generates and persists an AES ballot key in `/app/.ballot_encryption_key` unless `BALLOT_ENCRYPTION_KEY` is already defined.
 - `ENABLE_ENCRYPTION_DIAGNOSTICS` remains `1` so you can verify secrecy via the UI without extra steps.
 - Issue 1-3 diagnostics now require the default admin credentials (`admin` / `SecureAdm#12`); core enrolment and voting flows stay open for quick demos.
 - The compose file wiring: HAProxy (`gateway`) + two Flask app containers (`app_primary`, `app_secondary`) + Redis (shared rate limit counters) + MySQL master/replica. Remove `DATABASE_URL` if you prefer SQLite.
 
-> **Need HTTPS?** Set `TLS_ENABLE=true` on the app containers (and supply cert/key paths) or terminate TLS at HAProxy by mounting a PEM bundle and adding a `bind *:5000 ssl crt /path/to/cert.pem` line. No paid services are required.
+> **Need HTTPS?** The app containers now auto-provision self-signed certificates on boot (Issue #2). You can still point `TLS_CERT_FILE`/`TLS_KEY_FILE` at real certs or terminate TLS at HAProxy by mounting a PEM bundle and adding a `bind *:5000 ssl crt /path/to/cert.pem` line. No paid services are required.
 
 ### Gurveen - Issue #3: Rate Limiting & DDoS Resilience
 
@@ -56,7 +56,7 @@ Point your browser at [http://localhost:5000/home](http://localhost:5000/home). 
 
 ### Verifying AES Encryption via the UI
 
-1. After the stack starts, open [http://localhost:5000/home](http://localhost:5000/home) (or HTTPS if you re-enable TLS).
+1. After the stack starts, open [https://localhost:5000/home](https://localhost:5000/home) (the certificate is self-signed for demo purposes). If you disable TLS, use `http://localhost:5000/home` instead.
 2. Cast a vote using the regular voting form.
 3. Click the **Encryption Check** card on the home page (you will be prompted to log in as admin if you are not already authenticated).
 4. The diagnostics view shows:
@@ -79,18 +79,18 @@ export ENABLE_ENCRYPTION_DIAGNOSTICS=1  # optional for UI verification
 flask --app app.app:app run
 ```
 
+By default (when `TLS_ENABLE` is unset or `false`), the local server listens on `http://localhost:5000`. Set `TLS_ENABLE=true` with certificate paths to switch to HTTPS.
+
 ## HTTPS/TLS (Vote Integrity In-Transit)
 
-You can serve the app over HTTPS using only Python's built-in SSL support and locally generated certificates (no paid services required).
+You can serve the app over HTTPS using only Python's built-in SSL support and locally generated certificates (no paid services required). When no certificate is supplied, Issue #2 bootstrap code now generates a self-signed localhost certificate automatically.
 
-Steps:
-- Generate a self-signed certificate for development:
-  - OpenSSL example:
-    `openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -nodes -subj "/CN=localhost"`
-- Set environment variables so the app enables TLS:
-  - `TLS_ENABLE=true`
+Steps (manual override):
+- Bring your own certificate by setting:
   - `TLS_CERT_FILE=path/to/cert.pem`
   - `TLS_KEY_FILE=path/to/key.pem`
+  - `TLS_ENABLE=true`
+- Leave `TLS_ENABLE` unset/`false` to keep serving plain HTTP on `http://localhost:5000` for lightweight demos.
 - Start the app directly so Flask uses the SSL context:
   `python -m app.app`
 
@@ -100,7 +100,7 @@ Notes:
 
 ### Gurveen - Issue #2: Vote Integrity Test Dashboard (Testing Only)
 
-- Open `/integrity_test` (linked in the main navigation) to run automated checks that confirm TLS is configured, the current session is using HTTPS, the tamper-evident audit log verifies, and encrypted ballots decrypt without errors.
+- Open `/integrity_test` (linked in the main navigation) to run automated checks that confirm TLS is configured, the current session is using HTTPS, the tamper-evident audit log verifies, and encrypted ballots decrypt without errors. A testing-only reset button lets you rotate the audit log if you intentionally tamper with it during exercises.
 - This screen is for testing and demonstration purposes only; it does **not** replace formal certification or external penetration testing. Use it to validate configurations during development before promoting changes.
 
 ## Features in this Prototype
@@ -112,7 +112,7 @@ Notes:
 - Results: simple first-preference tallies; recount with manual exclusions
 - Scanned ballots: import via CSV-like paste to include in results
 - API: `GET /api/results` returns JSON tallies
-- Requirement 1 diagnostics: opt-in UI proving at-rest encryption without touching the database directly
+- Requirement 1 diagnostics: opt-in UI proving at-rest encryption without touching the database directly
 
 ## Notes
 

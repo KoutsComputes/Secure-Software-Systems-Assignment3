@@ -1,9 +1,9 @@
-Admin Access Requirement (Issues 1-3)
+Admin Access Requirement 
 
-- All diagnostic pages for Issues 1-3 now require an authenticated admin session.
+- All diagnostic (testing) pages require an authenticated admin session.
 - Default admin credentials: username `admin`, password `SecureAdm#12`.
 - Log in at `http://localhost:5000/auth/login` before running any of the tests below (MFA remains optional unless explicitly enforced).
-- Additional seeded accounts for RBAC testing: clerk (`clerk` / `Clerk#12AB34`) and voter (`voter` / `Voter#56CD78`).
+- Additional accounts for RBAC testing: clerk (`clerk` / `Clerk#12AB34`) and voter (`voter` / `Voter#56CD78`).
 
 Encryption Diagnostics - Issue 1 (Gurveen)
 
@@ -35,10 +35,10 @@ Encryption Diagnostics - Issue 1 (Gurveen)
 Integrity Check - Issue 2 (Gurveen)
 
 - Purpose
-  - Allow authorised admins to validate TLS transport, audit-log tamper evidence, and encrypted ballot integrity from the UI without extra tooling.
+  - Allow testers to validate TLS transport, audit-log tamper evidence, and encrypted ballot integrity from the UI without extra tooling.
 
 - Where the code is (Gurveen)
-  - `flask-prototype-app/app/app.py` - `integrity_test` route aggregates diagnostic checks and is protected with `@role_required('admin')`.
+  - `flask-prototype-app/app/app.py` - `integrity_test` route aggregates diagnostic checks and exposes a testing-only audit log reset.
   - `flask-prototype-app/app/templates/integrity_test.html` - renders the pass/fail table with disclaimer.
   - `flask-prototype-app/app/static/style.css` - styles the integrity panel and rows.
   - `flask-prototype-app/app/templates/base.html` - main navigation link for quick access.
@@ -47,11 +47,10 @@ Integrity Check - Issue 2 (Gurveen)
   - From repo root: `cd flask-prototype-app`
   - Start the stack with HTTPS enabled by default: `docker compose up --build`
   - Wait until the `web` container healthcheck passes.
-  - Log in as `admin` / `SecureAdm#12` so the integrity dashboard is accessible.
 
-- Test (UI)
+- Tests
   1. Visit `https://localhost:5000/home` (accept the self-signed cert on first run).
-  2. Click **Integrity Tests** in the top nav or go directly to `https://localhost:5000/integrity_test` (login enforced for admin access).
+  2. Click **Integrity Tests** in the top nav or go directly to `https://localhost:5000/integrity_test` (open access for testing only).
   3. Confirm table rows show **Pass**:
      - TLS configuration enabled (`TLS_ENABLE=true`).
      - Current session using HTTPS (`request.is_secure` or `X-Forwarded-Proto=https`).
@@ -59,18 +58,18 @@ Integrity Check - Issue 2 (Gurveen)
      - Encrypted ballots decrypt correctly (detects tampering/key mismatch).
 
 - Troubleshooting
-  - TLS failures -> ensure `/app/certs/server.crt` and `.key` exist; entrypoint regenerates them if missing.
+  - TLS failures -> ensure `/app/certs/server.crt` and `.key` exist; entrypoint and Issue #2 bootstrap regenerate them if missing.
   - Audit log failure -> inspect `/app/logs/audit.log` for manual edits; ensure `AUDIT_LOG_KEY` matches.
   - Ballot decryption failure -> confirm `/app/.ballot_encryption_key` matches deployed env or delete/allow regeneration.
   - Page unreachable -> verify container is running and `https://localhost:5000` is mapped.
 
 - Disclaimer
-  - This dashboard is for **testing purposes only**. It is not a substitute for external security assessments or certification.
+  - This dashboard is for **testing purposes only**. Use the reset button solely in non-production environments; it preserves a backup copy for investigation before starting a fresh chain.
 
-AVAILABILITY AND DDOS RESILIENCE - Issue 3 (Gurveen)
+Availability and DDOS Resilience - Issue 3 (Gurveen)
 
 - Purpose
-  - Guarantee election-day uptime by validating that HAProxy, multiple Flask containers, Redis-backed rate limiting, and diagnostic tooling work together to resist abusive traffic while keeping diagnostics restricted to admin testers.
+  - Guarantee election-day uptime by validating that HAProxy, multiple Flask containers, Redis-backed rate limiting, work together to resist abusive traffic while keeping diagnostics restricted to admin testers.
 
 - Where the code is (Gurveen)
   - `flask-prototype-app/app/app.py` - `rate_limit_test`, `rate_limit_test_hit`, `rate_limit_test_window`, and `rate_limit_test_reset` routes are all wrapped with `@role_required('admin')`, alongside `_resolve_client_ip` and limiter bootstrap.
@@ -87,7 +86,7 @@ AVAILABILITY AND DDOS RESILIENCE - Issue 3 (Gurveen)
   4. Log in as `admin` / `SecureAdm#12` to unlock the diagnostics dashboard.
   5. (Optional) Tail logs to confirm HAProxy is balancing requests: `docker compose logs -f gateway`.
 
-- Tests (UI & CLI)
+- Tests
   1. **Cluster Health via UI**
      - Browse to `http://localhost:5000/rate_limit_test` (or use **Rate Limiter Test** in the nav). Unauthenticated users are redirected to the login page.
      - Confirm summary cards show:
@@ -116,6 +115,35 @@ AVAILABILITY AND DDOS RESILIENCE - Issue 3 (Gurveen)
 
 - Disclaimer
   - These diagnostics are for **testing purposes only**. Combine them with full-scale load tests, chaos/latency drills, and independent security assessments before going live on election day.
+
+Non-Repudiation - Issue 4 (Gurveen)
+
+- Purpose
+  - Provide election auditors and administrators with verifiable proof that every audited action (votes, configuration changes, privileged access) carries an Ed25519 digital signature, preventing signers from repudiating their actions later.
+
+- Where the code is (Gurveen)
+  - `flask-prototype-app/app/security.py` - `DigitalSignatureManager` manages key provisioning and verifies signatures during log replay.
+  - `flask-prototype-app/app/app.py` - `_ensure_actor_signing_identity` seeds keys for each account; `/audit/signature-test` renders the verification dashboard.
+  - `flask-prototype-app/app/templates/audit_signature_test.html` - admin-only UI showing recent entries, signature status, and truncated keys.
+  - `flask-prototype-app/docker-entrypoint.sh` - bootstraps the signing key vault inside the container with secure permissions.
+
+- Setup
+  1. From repo root: `cd flask-prototype-app`
+  2. Start the stack: `docker compose up --build`
+  3. After the app container starts, confirm the signer vault exists: `docker compose exec app ls -l app/signing_keys`
+  4. Log in as `admin` / `SecureAdm#12` so the admin dashboard is available.
+
+- Tests
+  1. Navigate to `http://localhost:5000/home` and authenticate as the admin.
+  2. In the admin dashboard, select **Digital Signature Test (Admin)**. A warning banner reminds you this diagnostic is for testing-only use.
+  3. Perform several actions (e.g., cast a vote, update a voter address, import scanned ballots). Refresh the Digital Signature Test page—new entries should appear with:
+     - Signature Status for untampered entries.
+     - `ed25519` listed under Signature Algorithm.
+     - Truncated base64 values for the signature and public key columns.
+  4. Confirm the “Hash Chain Integrity” panel shows a success message. If it reports failure, review `app/logs/audit.log` for unexpected edits.
+
+- Disclaimer
+  - The Digital Signature Test dashboard is provided for **testing purposes only**. Auditors should export the full log and validate signatures using independent tooling before formal certification.
 
 Security Testing Guide - Incident Recovery (Issue 5)
 

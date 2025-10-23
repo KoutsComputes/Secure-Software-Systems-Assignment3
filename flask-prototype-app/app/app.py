@@ -1,6 +1,8 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, abort, session  # Theo: Issue 6 - session for auth
+import json  # Gurveen - Issue #4: parse audit log entries for signature diagnostics.
 import os
 import uuid
+from datetime import datetime, timedelta  # Gurveen - Issue #4: present audit timestamps in the signature tester UI. Gurveen - Issue #2: TLS cert validity window.
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash  # Theo: Issue 6 - password hashing
 import pyotp  # Theo: Issue 6 - TOTP MFA
@@ -10,12 +12,16 @@ from io import BytesIO  # Theo: Issue 6 - In-memory image buffer
 from flask_limiter import Limiter  # Gurveen - Issue #3: in-app rate limiting
 from flask_limiter.util import get_remote_address  # Gurveen - Issue #3: helper fallback
 from limits import parse as parse_rate_limit  # Gurveen - Issue #3: parse human-friendly policies
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 # Support running as a script or as a package
 try:
-    from security import get_audit_logger, is_country_allowed  # when running app/app.py directly
+    from security import get_audit_logger, get_signature_manager, is_country_allowed  # when running app/app.py directly
     from crypto_utils import encrypt_ballot_value, decrypt_ballot_value
-except ImportError:  # pragma: no cover
-    from .security import get_audit_logger, is_country_allowed  # when imported as package
+except ImportError:
+    from .security import get_audit_logger, get_signature_manager, is_country_allowed  # when imported as package
     from .crypto_utils import encrypt_ballot_value, decrypt_ballot_value  # Gurveen - Issue #1: AES ballot helpers
 
 app = Flask(__name__)
@@ -23,6 +29,16 @@ app = Flask(__name__)
 _basedir = os.path.dirname(__file__)
 app.config.from_pyfile(os.path.join(_basedir, 'config.py'))
 db = SQLAlchemy(app)
+
+# Gurveen - Issue #4: guarantee every actor has a dedicated Ed25519 signing identity on disk so their future actions can
+# be signed without delays and auditors can verify which credential authored any given audit trail event.
+def _ensure_actor_signing_identity(actor: str) -> None:
+    if not actor:
+        return
+    try:
+        get_signature_manager().get_public_key_b64(actor)
+    except Exception as exc:
+        app.logger.warning("Failed to provision signing identity for %s: %s", actor, exc)
 
 # Gurveen - Issue #3: Determine the real client IP even when behind trusted proxies/CDN.
 def _resolve_client_ip():
@@ -45,6 +61,45 @@ limiter = Limiter(
     strategy='fixed-window-elastic-expiry',  # Gurveen - Issue #3: steady fairness under bursts.
     headers_enabled=True
 )
+
+# Gurveen - Issue #2: Generate self-signed TLS certificates on-demand for localhost testing.
+def _ensure_self_signed_certificates(cert_path: str, key_path: str) -> None:
+    if not cert_path or not key_path:
+        return
+    cert_exists = os.path.exists(cert_path)
+    key_exists = os.path.exists(key_path)
+    if cert_exists and key_exists:
+        return
+    os.makedirs(os.path.dirname(cert_path), exist_ok=True)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = issuer = x509.Name([
+        x509.NameAttribute(NameOID.COUNTRY_NAME, "AU"),
+        x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "VIC"),
+        x509.NameAttribute(NameOID.LOCALITY_NAME, "Melbourne"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "SecureVote Prototype"),
+        x509.NameAttribute(NameOID.COMMON_NAME, "localhost"),
+    ])
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.utcnow() - timedelta(minutes=1))
+        .not_valid_after(datetime.utcnow() + timedelta(days=365))
+        .add_extension(x509.SubjectAlternativeName([x509.DNSName("localhost")]), critical=False)
+        .sign(key, hashes.SHA256())
+    )
+    with open(key_path, 'wb') as f_key:
+        f_key.write(
+            key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()
+            )
+        )
+    with open(cert_path, 'wb') as f_cert:
+        f_cert.write(cert.public_bytes(serialization.Encoding.PEM))
 
 # Gurveen - Issue #3: Convert configured policy into a reusable RateLimitItem.
 def _default_rate_limit_item():
@@ -81,6 +136,10 @@ def dev_admin_login():
         )
         db.session.add(user)
         db.session.commit()
+        _ensure_actor_signing_identity(user.username)
+    else:
+        # Gurveen - Issue #4: reconcile pre-existing admin accounts with the signing vault so their later actions are still attributable.
+        _ensure_actor_signing_identity(user.username)
     # Log in (skip MFA for diagnostics convenience)
     session['user_id'] = user.id
     session['mfa_ok'] = True
@@ -98,12 +157,13 @@ def _init_db():
         existing = set()
     for rname, desc in (
         ('voter', 'Regular voter with minimal privileges'),
-        ('clerk', 'Polling clerk: verify enrolment, assist voters'),
+        ('clerk', 'Polling clerk: verify enrollment, assist voters'),
         ('admin', 'System admin: manage candidates and system areas'),
     ):
         if rname not in existing:
             db.session.add(Role(name=rname, description=desc))
     db.session.commit()
+    _ensure_actor_signing_identity('system')  # Gurveen - Issue #4: provision a deterministic key for automated/system actors.
     # Theo: Issue 8 - Optional admin bootstrap via env (for backend RBAC testing)
     admin_user = os.environ.get('BOOTSTRAP_ADMIN_USERNAME')
     admin_pass = os.environ.get('BOOTSTRAP_ADMIN_PASSWORD')
@@ -115,6 +175,8 @@ def _init_db():
                 role='admin'
             ))
             db.session.commit()
+        # Gurveen - Issue #4: sync bootstrap accounts with the signer so admin automation has non-repudiation from the first login.
+        _ensure_actor_signing_identity(admin_user)
     # Gurveen - Issue #1: ensure default admin exists for pure UI login if not bootstrapped already.
     default_accounts = [
         (app.config.get('DEFAULT_ADMIN_USERNAME'), app.config.get('DEFAULT_ADMIN_PASSWORD'), 'admin'),
@@ -133,6 +195,7 @@ def _init_db():
             )
             db.session.add(user)
             db.session.commit()
+            _ensure_actor_signing_identity(username)  # Gurveen - Issue #4: seed signing keys with default accounts to avoid unsigned admin actions.
             continue
         updates = False
         if not check_password_hash(user.password_hash, password):
@@ -143,6 +206,7 @@ def _init_db():
             updates = True
         if updates:
             db.session.commit()
+        _ensure_actor_signing_identity(username)  # Gurveen - Issue #4: refresh key material linkage whenever account credentials change.
 
 @app.context_processor
 def _inject_feature_flags():
@@ -351,6 +415,7 @@ def auth_register():
         )
         db.session.add(user)
         db.session.commit()
+        _ensure_actor_signing_identity(user.username)  # Gurveen - Issue #4: issue voter-specific signing keys at registration for immediate audit coverage.
         flash('Account created. Please log in and set up MFA.')
         return redirect(url_for('auth_login'))
     return render_template('auth_register.html')
@@ -885,10 +950,104 @@ def audit_verify():
     return jsonify({'audit_log_valid': ok})
 
 
-# Gurveen - Issue #2: Public UI for running TLS and vote integrity diagnostics (testing only)
-@app.route('/integrity_test')
+# Gurveen - Issue #4: admin-only UI harness to validate audit log signatures (testing purposes only).
+@app.route('/audit/signature-test')
 @role_required('admin')
+def audit_signature_test():
+    logger = get_audit_logger()
+    chain_ok = logger.verify()
+    signature_manager = get_signature_manager()
+    log_path = app.config.get('AUDIT_LOG_PATH')
+    entries = []
+    log_error = None
+    try:
+        with open(log_path, 'r', encoding='utf-8') as audit_file:
+            for raw in audit_file:
+                record_line = raw.strip()
+                if not record_line:
+                    continue
+                try:
+                    record = json.loads(record_line)
+                except json.JSONDecodeError:
+                    entries.append({
+                        'timestamp': 'n/a',
+                        'actor': None,
+                        'action': None,
+                        'signature_valid': False,
+                        'sig_issue': 'Malformed audit entry payload',
+                        'signature_alg': None,
+                        'public_key': None,
+                        'signature': None,
+                        'mac': None,
+                    })
+                    continue
+                base_payload = {
+                    key: record[key]
+                    for key in record
+                    if key not in {'signature', 'signing_public_key', 'signature_alg'}
+                }
+                signature_alg = record.get('signature_alg')
+                signature = record.get('signature')
+                public_key = record.get('signing_public_key')
+                signature_valid = False
+                sig_issue = None
+                if signature_alg != 'ed25519':
+                    sig_issue = 'Unsupported signature algorithm'
+                elif not signature or not public_key:
+                    sig_issue = 'Missing signature or public key'
+                else:
+                    sign_body = json.dumps(base_payload, sort_keys=True).encode('utf-8')
+                    signature_valid = signature_manager.verify_signature(public_key, sign_body, signature)
+                    if not signature_valid:
+                        sig_issue = 'Signature verification failed'
+                ts = record.get('ts')
+                timestamp = (
+                    datetime.utcfromtimestamp(ts).isoformat() + 'Z'
+                    if isinstance(ts, (int, float)) and ts > 0 else 'n/a'
+                )
+                entries.append({
+                    'timestamp': timestamp,
+                    'actor': record.get('actor', 'system'),
+                    'action': record.get('action'),
+                    'signature_valid': signature_valid,
+                    'sig_issue': sig_issue,
+                    'signature_alg': signature_alg,
+                    'public_key': public_key,
+                    'signature': signature,
+                    'mac': record.get('mac'),
+                })
+    except FileNotFoundError:
+        log_error = 'Audit log file not found yet.'
+    except Exception as exc:  # pragma: no cover - defensive
+        log_error = f'Unexpected error reading audit log: {exc}'
+    latest_entries = list(reversed(entries[-25:]))
+    return render_template(
+        'audit_signature_test.html',
+        chain_ok=chain_ok,
+        entries=latest_entries,
+        log_error=log_error,
+    )
+
+
+# Gurveen - Issue #2: Public UI for running TLS and vote integrity diagnostics (testing only)
+@app.route('/integrity_test', methods=['GET', 'POST'])
 def integrity_test():
+    if request.method == 'POST':
+        action = request.form.get('action')
+        if action == 'reset_audit_log':
+            log_path = app.config.get('AUDIT_LOG_PATH')
+            try:
+                if log_path and os.path.exists(log_path):
+                    ts = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+                    backup_path = f"{log_path}.bak.{ts}"
+                    os.replace(log_path, backup_path)
+                    flash(f'Audit log reset for testing (backup saved as {os.path.basename(backup_path)}).')
+                else:
+                    flash('Audit log not found; nothing to reset.')
+            except Exception as exc:  # pragma: no cover - defensive
+                flash(f'Failed to reset audit log: {exc}')
+        return redirect(url_for('integrity_test'))
+
     tests = []
 
     def add_test(name: str, passed: bool, detail: str = ""):
@@ -933,7 +1092,7 @@ def integrity_test():
 @app.route('/rate_limit_test')
 @role_required('admin')
 def rate_limit_test():
-    """Gurveen - Issue #3: UI harness verifies rate limiter health before election day."""
+    # Gurveen - Issue #3: UI harness verifies rate limiter health before election day.
     storage = limiter.limiter.storage
     storage_backend = storage.__class__.__name__
     storage_uri = app.config.get('RATE_LIMIT_STORAGE_URI', 'memory://')
@@ -964,7 +1123,7 @@ def rate_limit_test():
 @app.route('/rate_limit_test/window')
 @role_required('admin')
 def rate_limit_test_window():
-    """Gurveen - Issue #3: Surface remaining allowance for the tester's IP."""
+    # Gurveen - Issue #3: Surface remaining allowance for the tester's IP.
     limit_item = _default_rate_limit_item()
     test_token = f"ui-rate-limit::{_resolve_client_ip()}"
     reset_at, remaining = limiter.limiter.get_window_stats(limit_item, test_token)
@@ -980,7 +1139,7 @@ def rate_limit_test_window():
 @app.route('/rate_limit_test/hit', methods=['POST'])
 @role_required('admin')
 def rate_limit_test_hit():
-    """Gurveen - Issue #3: Simulate a burst locally without hammering real vote endpoints."""
+    # Gurveen - Issue #3: Simulate a burst locally without hammering real vote endpoints
     payload = request.get_json(silent=True) or {}
     requested = int(payload.get('count', 1))
     requested = max(1, min(requested, 200))
@@ -1057,11 +1216,13 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
     # Gurveen - Issue #2: Enable HTTPS using Python stdlib only when configured.
-    # Gurveen - Issue #2: In production, prefer terminating TLS at a reverse proxy (e.g., nginx/Load Balancer)
-    # Gurveen - Issue #2: and keep Flask behind it. This path supports dev/self-hosted TLS.
+    # In production, prefer terminating TLS at a reverse proxy (e.g., nginx/Load Balancer)
+    # and keep Flask behind it. This path supports dev/self-hosted TLS.
     cert = app.config.get('TLS_CERT_FILE')
     key = app.config.get('TLS_KEY_FILE')
     enable_tls = app.config.get('TLS_ENABLE', False) and cert and key
+    if enable_tls:
+        _ensure_self_signed_certificates(cert, key)
     ssl_ctx = (cert, key) if enable_tls else None
     # Gurveen - Issue #2: When TLS is enabled, set secure cookies if not already forced by env
     if enable_tls:

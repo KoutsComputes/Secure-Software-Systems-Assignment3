@@ -13,6 +13,7 @@
       <div class="links">
         <a class="btn" href="{{ url_for('import_scanned') }}">Import Scanned Ballots</a>
         <a class="btn btn-secondary" href="{{ url_for('audit_verify') }}">Verify Audit Log</a>
+        <a class="btn btn-accent" href="{{ url_for('audit_signature_test') }}">Digital Signature Test (Admin)</a> <!-- Gurveen - Issue #4: expose signature verification harness to administrators only. -->
       </div>
     </div>
     <div class="card">

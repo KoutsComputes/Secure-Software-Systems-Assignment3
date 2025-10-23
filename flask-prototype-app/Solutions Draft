@@ -4,19 +4,19 @@
 | 2.   | Vote Integrity           | TLS                                                                                                                     |
 | 3.   | Availability (DDoS)      | Rate limiting (without nginx) + MULTIPLE DOCKER                                                                         |
 | 4.   | Non-Repudiation          | JSON Web Tokens                                                                                                         |
-| 5.   | Incident Recovery        | Docker status + automatically make docker up and link parts of application + auto-restart — DO NOT USE MULTIPLE SOLUTIONS JUST ONE SOLID SOLUTION |
+| 5.   | Incident Recovery        | Docker status + automatically make docker up and link parts of application + auto-restart - DO NOT USE MULTIPLE SOLUTIONS JUST ONE SOLID SOLUTION |
 | 6.   | Voter Authentication     | Password + MFA                                                                                                          |
-| 7.   | RBAC (Frontend)          | Separate dashboards — NO JWT TOKEN REPEAT — THINK OF SOMETHING OTHER THAN JWT                                           |
+| 7.   | RBAC (Frontend)          | Separate dashboards - NO JWT TOKEN REPEAT - THINK OF SOMETHING OTHER THAN JWT                                           |
 | 8.   | RBAC (Backend)           | ROLE IN API AND IN DATABASE (two separate requirements)                                                                 |
 | 9.   | Maintain Logging         | LOGS ARE APPEND ONLY BY DEFAULT                                                                                         |
 | 10.  | Vote Verifiability       | Receipt number: instead of SHA-256, include location, time, and other details; construct a formula for the function     |
-| 11.  | Automatic Backups        | MASTER–SLAVE INSTANCES                                                                                                 |
+| 11.  | Automatic Backups        | MASTER-SLAVE INSTANCES                                                                                                 |
 | 12.  | Geolocation Restrictions | Nginx GeoIP                                                                                                            |
-| 13.  | API Rate Limiting        | limit_req — DO NOT USE NGINX TOO MANY TIMES AND THINK OF SOME OTHER SOLUTION                                            |
+| 13.  | API Rate Limiting        | limit_req - DO NOT USE NGINX TOO MANY TIMES AND THINK OF SOME OTHER SOLUTION                                            |
 | 14.  | Caching Common Data      | Static files + COOKIES OR REQUEST PARAMETERS                                                                            |
 | 15.  | Session Recovery         | LocalStorage                                                                                                            |
-| 16.  | Input Validation         | Prevents attackers from injecting malicious SQL that could alter votes, results, or user data in the database. Ensures only valid, intended queries run. → SQL INJECTION ATTACK PREVENTION ON INPUT VALIDATION |
+| 16.  | Input Validation         | Prevents attackers from injecting malicious SQL that could alter votes, results, or user data in the database. Ensures only valid, intended queries run. -> SQL INJECTION ATTACK PREVENTION ON INPUT VALIDATION |
 | 17.  | Saved Backups            | Hybrid (local + weekly cloud)                                                                                           |
-| 18.  | Minimal Downtime         | Load balance (2 containers) — DO NOT USE NGINX                                                                          |
-| 19.  | HTTPS / TLS              | Let’s Encrypt                                                                                                           |
-| 20.  | URL Validation           | Whitelist checking prevents attackers from crafting malicious URLs to tamper with voting endpoints or redirect users to phishing sites. → SQL INJECTION ATTACK URLs |
+| 18.  | Minimal Downtime         | Load balance (2 containers) - DO NOT USE NGINX                                                                          |
+| 19.  | HTTPS / TLS              | Let's Encrypt                                                                                                           |
+| 20.  | URL Validation           | Whitelist checking prevents attackers from crafting malicious URLs to tamper with voting endpoints or redirect users to phishing sites. -> SQL INJECTION ATTACK URLs |

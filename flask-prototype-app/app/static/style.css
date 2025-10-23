@@ -118,6 +118,9 @@ body {
 .integrity-table th, .integrity-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .integrity-table tr.pass td { background: #ecfdf5; color: #065f46; }
 .integrity-table tr.fail td { background: #fef2f2; color: #b91c1c; }
+.integrity-actions { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+.integrity-actions .btn { align-self: flex-start; }
+.integrity-actions .muted { font-size: 0.9rem; }
 
 /* Gurveen - Issue #3: rate limiter diagnostics */
 .stats-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin: 18px 0; }

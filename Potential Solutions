@@ -116,4 +116,4 @@ Justification: Prevents attackers from injecting malicious SQL that could alter 
 Potential Solutions: Whitelist checking, SQL injection prevention on URLs, Regex validation.
 Pros & Cons: Whitelisting ensures only valid endpoints are accessed but requires maintenance. SQL injection prevention on URLs ensures URLs cannot manipulate SQL queries. Regex validation is flexible but can block valid URLs if misused.
 Chosen Solution: SQL injection attack URLs.
-Justification: Whitelist checking and SQL injection prevention protect against crafted malicious URLs designed to tamper with endpoints or redirect users to phishing sites, ensuring the integrity of the application’s routing and query structure.
+Justification: Whitelist checking and SQL injection prevention protect against crafted malicious URLs designed to tamper with endpoints or redirect users to phishing sites, ensuring the integrity of the application's routing and query structure.

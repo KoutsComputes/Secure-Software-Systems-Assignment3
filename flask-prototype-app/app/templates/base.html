@@ -12,9 +12,9 @@
       <div class="brand">Electronic Voting Prototype</div>
       <nav class="nav">
         <a href="{{ url_for('index') }}">Home</a>
-        {% if user_role == 'admin' %}
-        <!-- Gurveen - Issue #2: expose integrity diagnostics to admin -->
+        <!-- Gurveen - Issue #2: expose integrity diagnostics publicly for testing convenience -->
         <a href="{{ url_for('integrity_test') }}">Integrity Tests</a>
+        {% if user_role == 'admin' %}
         <!-- Gurveen - Issue #3: provide rate limit verification harness -->
         <a href="{{ url_for('rate_limit_test') }}">Rate Limiter Test</a>
         {% endif %}
