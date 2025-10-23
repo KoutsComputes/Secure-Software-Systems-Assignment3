@@ -29,7 +29,7 @@ services:
       redis:
         condition: service_started
 
-  app_secondary:
+  app_secondary:     # Mitbhai Chatrola: ISSUE 18 - Multiple Instances
     build: .
     volumes:
       - ./:/app
@@ -69,7 +69,7 @@ services:
         condition: service_healthy
       app_secondary:
         condition: service_healthy
-    restart: always
+    restart: always    # Mitbhai Chatrola: ISSUE 18 - Ensures all critical containers automatically recover on failure.
 
   redis:
     image: redis:7-alpine
@@ -98,7 +98,7 @@ services:
       retries: 5
       start_period: 20s
 
-  db_replica:
+  db_replica:     # Mitbhai Chatrola: Secondary MySQL replica (read-only)
     image: mysql:5.7
     restart: always
     command: --server-id=2 --relay-log=mysqld-relay-bin --read_only=1 --binlog_do_db=flask_db
