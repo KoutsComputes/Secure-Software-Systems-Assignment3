@@ -9,13 +9,13 @@ flask-prototype-app
 ├─ app
 │  ├─ app.py               # main app, models + routes
 │  ├─ config.py            # defaults to SQLite, supports DATABASE_URL
-│  ├─ crypto_utils.py      # Requirement 1 AES helpers
+│  ├─ crypto_utils.py      # AES helpers
 │  ├─ static/style.css
 │  └─ templates/
 │     ├─ index.html
 │     ├─ encryption_diagnostics.html
 │     └─ ...
-├─ docker-entrypoint.sh    # Requirement 1 automation for Docker
+├─ docker-entrypoint.sh   #automation for docker
 ├─ docker-compose.yml
 ├─ Dockerfile
 ├─ requirements.txt
@@ -24,13 +24,14 @@ flask-prototype-app
 
 ## Quick Start (Docker)
 
-The repository is pre-configured for a Docker-only demo workflow; only the security diagnostics require the seeded admin login (`admin` / `SecureAdm#12`).
+The repository is pre-configured for a Docker-only demo workflow; only the security diagnostics require admin login.
 
 > **Default Accounts (fixed in `app/config.py`)**  
 > - Admin — username `admin`, password `SecureAdm#12`  
 > - Clerk — username `clerk`, password `Clerk#12AB34`  
 > - Voter — username `voter`, password `Voter#56CD78`  
-> Use the admin account for the diagnostic dashboards (Issues 1–3); clerk and voter accounts help exercise RBAC flows.
+
+Use the admin account for the diagnostic dashboards; clerk and voter accounts help exercise RBAC flows.
 
 ```bash
 docker compose up --build

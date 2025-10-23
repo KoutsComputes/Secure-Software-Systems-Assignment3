@@ -41,8 +41,10 @@ ENFORCE_MFA_ON_VOTE = os.environ.get('ENFORCE_MFA_ON_VOTE', 'false').lower() == 
 # Default accounts are fixed for controlled testing; overrides via env are intentionally ignored.
 DEFAULT_ADMIN_USERNAME = 'admin'
 DEFAULT_ADMIN_PASSWORD = 'SecureAdm#12'
+
 DEFAULT_CLERK_USERNAME = 'clerk'
 DEFAULT_CLERK_PASSWORD = 'Clerk#12AB34'
+
 DEFAULT_VOTER_USERNAME = 'voter'
 DEFAULT_VOTER_PASSWORD = 'Voter#56CD78'
 

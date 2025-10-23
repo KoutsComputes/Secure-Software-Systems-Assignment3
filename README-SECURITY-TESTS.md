@@ -193,8 +193,6 @@ MFA Testing Guide - Voter Authentication (Issue 6)
 
 - Troubleshooting
   - If codes don't verify, check device time is accurate and retry within 30s window.
-  - Ensure `SECRET_KEY` is set in compose so sessions persist.
-  - Optional admin bootstrap for RBAC testing: set `BOOTSTRAP_ADMIN_USERNAME` and `BOOTSTRAP_ADMIN_PASSWORD` in compose, then `docker compose up -d`.
 
 Frontend RBAC Testing - Issue 7 (Theo)
 
@@ -225,7 +223,4 @@ Backend RBAC Testing - Issue 8 (Theo)
   - Confirm access:
     - `voter` cannot open `/add_candidate` or `/dashboard/admin` (403).
     - `admin` can open `/dashboard/admin`, `/admin/users`, and `/add_candidate`.
-  - To bootstrap an admin quickly, set env vars in compose:
-    - `BOOTSTRAP_ADMIN_USERNAME=admin`
-    - `BOOTSTRAP_ADMIN_PASSWORD=ChangeMe123456`
     - Then `docker compose up -d --build`
