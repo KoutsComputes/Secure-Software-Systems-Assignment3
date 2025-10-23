@@ -1,28 +1,121 @@
+Admin Access Requirement (Issues 1-3)
+
+- All diagnostic pages for Issues 1-3 now require an authenticated admin session.
+- Default admin credentials: username `admin`, password `SecureAdm#12`.
+- Log in at `http://localhost:5000/auth/login` before running any of the tests below (MFA remains optional unless explicitly enforced).
+- Additional seeded accounts for RBAC testing: clerk (`clerk` / `Clerk#12AB34`) and voter (`voter` / `Voter#56CD78`).
+
 Encryption Diagnostics - Issue 1 (Gurveen)
 
 - Purpose
-  - Validate that AES ballot confidentiality works and that the diagnostics UI is accessible for testing without login in demo mode.
+  - Validate that AES ballot confidentiality works and that the diagnostics UI is available only to authorised admin testers.
 
 - Where the code is (Gurveen)
-  - flask-prototype-app/app/app.py:180 - global auth/MFA guard disabled for demo simplicity.
-  - flask-prototype-app/app/app.py:781 - diagnostics route; no admin gate in demo mode.
-  - flask-prototype-app/app/templates/index.html:47 - shows the diagnostics card when diagnostics flag is enabled.
-  - flask-prototype-app/README.md - simplified, no-auth usage instructions.
+  - `flask-prototype-app/app/app.py` - `_init_db` seeds/resets the default admin password (`SecureAdm#12`).
+  - `flask-prototype-app/app/app.py` - `/encryption_diagnostics` now has `@role_required('admin')`.
+  - `flask-prototype-app/app/templates/index.html` - diagnostics card remains but redirects unauthorised users to login.
+  - `flask-prototype-app/README.md` - updated to instruct testers to authenticate as admin.
 
 - Setup
   - cd `flask-prototype-app`
   - `docker compose up --build`
   - Ensure `ENABLE_ENCRYPTION_DIAGNOSTICS=1` (entrypoint sets this automatically in Docker).
+  - Sign in at `http://localhost:5000/auth/login` with `admin` / `SecureAdm#12` so the diagnostics view loads.
 
 - Test (UI)
-  1. Open `http://localhost:5000/home`.
+  1. After logging in, open `http://localhost:5000/home`.
   2. Cast a vote.
   3. Click the "Encryption Check" card to open diagnostics.
-  4. Confirm the page shows a sample plaintext with AES-GCM ciphertext and the most recent stored ballot’s ciphertext with the server-side decrypted plaintext.
+  4. Confirm the page shows a sample plaintext with AES-GCM ciphertext and the most recent stored ballot's ciphertext with the server-side decrypted plaintext.
 
 - Troubleshooting
   - If the card does not appear, verify the diagnostics flag is enabled.
   - For production, disable diagnostics (`ENABLE_ENCRYPTION_DIAGNOSTICS=0`) to hide the page.
+
+Integrity Check - Issue 2 (Gurveen)
+
+- Purpose
+  - Allow authorised admins to validate TLS transport, audit-log tamper evidence, and encrypted ballot integrity from the UI without extra tooling.
+
+- Where the code is (Gurveen)
+  - `flask-prototype-app/app/app.py` - `integrity_test` route aggregates diagnostic checks and is protected with `@role_required('admin')`.
+  - `flask-prototype-app/app/templates/integrity_test.html` - renders the pass/fail table with disclaimer.
+  - `flask-prototype-app/app/static/style.css` - styles the integrity panel and rows.
+  - `flask-prototype-app/app/templates/base.html` - main navigation link for quick access.
+
+- Setup
+  - From repo root: `cd flask-prototype-app`
+  - Start the stack with HTTPS enabled by default: `docker compose up --build`
+  - Wait until the `web` container healthcheck passes.
+  - Log in as `admin` / `SecureAdm#12` so the integrity dashboard is accessible.
+
+- Test (UI)
+  1. Visit `https://localhost:5000/home` (accept the self-signed cert on first run).
+  2. Click **Integrity Tests** in the top nav or go directly to `https://localhost:5000/integrity_test` (login enforced for admin access).
+  3. Confirm table rows show **Pass**:
+     - TLS configuration enabled (`TLS_ENABLE=true`).
+     - Current session using HTTPS (`request.is_secure` or `X-Forwarded-Proto=https`).
+     - Tamper-evident audit log chain valid (`TamperEvidentLogger.verify()`).
+     - Encrypted ballots decrypt correctly (detects tampering/key mismatch).
+
+- Troubleshooting
+  - TLS failures -> ensure `/app/certs/server.crt` and `.key` exist; entrypoint regenerates them if missing.
+  - Audit log failure -> inspect `/app/logs/audit.log` for manual edits; ensure `AUDIT_LOG_KEY` matches.
+  - Ballot decryption failure -> confirm `/app/.ballot_encryption_key` matches deployed env or delete/allow regeneration.
+  - Page unreachable -> verify container is running and `https://localhost:5000` is mapped.
+
+- Disclaimer
+  - This dashboard is for **testing purposes only**. It is not a substitute for external security assessments or certification.
+
+AVAILABILITY AND DDOS RESILIENCE - Issue 3 (Gurveen)
+
+- Purpose
+  - Guarantee election-day uptime by validating that HAProxy, multiple Flask containers, Redis-backed rate limiting, and diagnostic tooling work together to resist abusive traffic while keeping diagnostics restricted to admin testers.
+
+- Where the code is (Gurveen)
+  - `flask-prototype-app/app/app.py` - `rate_limit_test`, `rate_limit_test_hit`, `rate_limit_test_window`, and `rate_limit_test_reset` routes are all wrapped with `@role_required('admin')`, alongside `_resolve_client_ip` and limiter bootstrap.
+  - `flask-prototype-app/app/templates/rate_limit_test.html` - UI harness for burst simulation and live quota display.
+  - `flask-prototype-app/app/static/style.css` - styling for Issue #3 diagnostics cards and alerts.
+  - `flask-prototype-app/docker-compose.yml` - HAProxy (`gateway`), dual app replicas, Redis store, MySQL tier.
+  - `flask-prototype-app/docker-entrypoint.sh` - auto-configure rate limit defaults (50/min), Redis URI, self-signed TLS (optional).
+  - `flask-prototype-app/README.md` - overview of the resilience architecture and tester warnings.
+
+- Setup
+  1. From repo root: `cd flask-prototype-app`
+  2. Launch the stack: `docker compose up --build`
+  3. Wait until `gateway`, `redis`, `app_primary`, and `app_secondary` show as **healthy** (`docker compose ps`).
+  4. Log in as `admin` / `SecureAdm#12` to unlock the diagnostics dashboard.
+  5. (Optional) Tail logs to confirm HAProxy is balancing requests: `docker compose logs -f gateway`.
+
+- Tests (UI & CLI)
+  1. **Cluster Health via UI**
+     - Browse to `http://localhost:5000/rate_limit_test` (or use **Rate Limiter Test** in the nav). Unauthenticated users are redirected to the login page.
+     - Confirm summary cards show:
+       - Policy = `50 per minute` (or your overridden value).
+       - Storage backend = `RedisStorage` targeting `redis://redis:6379/0`.
+       - Backend status = **Healthy**.
+  2. **Burst Simulation**
+     - Leave the default 55 requests and click **Launch Simulation**.
+     - Expect the first ~50 requests to succeed, the remainder to be blocked, and the remaining quota to drop accordingly.
+     - Observe the reset timer to understand when the next window opens.
+  3. **Window Reset & Repeat**
+     - Hit **Reset Window** to clear the diagnostic bucket (does not touch real voter traffic).
+     - Re-run the burst to confirm consistent limiter behaviour.
+  4. **Failover Check (optional)**
+     - From another terminal: `docker compose restart app_primary`.
+     - Refresh the diagnostics page while the container restarts. HAProxy should continue serving responses via `app_secondary`, and the limiter counters should remain intact because they live in Redis.
+  5. **CLI Verification**
+     - Inspect Redis keys to ensure counters are being created: `docker compose exec redis redis-cli keys "*rate-limit*"` (expected: diagnostic token keys appear after a burst).
+     - Verify HAProxy backend status: `docker compose exec gateway bash -c "echo 'show servers state' | socat stdio /var/run/haproxy/admin.sock"` (requires `socat` inside the image; if unavailable, rely on logs).
+
+- Troubleshooting
+  - Backend unavailable -> Run `docker compose logs redis`; ensure the container is healthy. Without Redis, rate limiting falls back to memory and loses cross-container protection.
+  - Burst never blocks -> Check `RATE_LIMIT_DEFAULT` is reasonable; confirm diagnostics endpoints are not bypassing HAProxy.
+  - Requests still blocked after reset -> Browser caching can reuse stale JSON; hard refresh or use curl: `curl -X POST http://localhost:5000/rate_limit_test/reset`.
+  - HAProxy reports down backends -> Verify the Flask health checks (`/healthz`) succeed; inspect Flask logs for startup errors.
+
+- Disclaimer
+  - These diagnostics are for **testing purposes only**. Combine them with full-scale load tests, chaos/latency drills, and independent security assessments before going live on election day.
 
 Security Testing Guide - Incident Recovery (Issue 5)
 

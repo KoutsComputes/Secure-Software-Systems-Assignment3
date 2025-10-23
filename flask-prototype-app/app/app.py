@@ -7,6 +7,9 @@ import pyotp  # Theo: Issue 6 - TOTP MFA
 import qrcode  # Theo: Issue 6 - QR code generation for TOTP setup
 import base64  # Theo: Issue 6 - Encode QR image for template
 from io import BytesIO  # Theo: Issue 6 - In-memory image buffer
+from flask_limiter import Limiter  # Gurveen - Issue #3: in-app rate limiting
+from flask_limiter.util import get_remote_address  # Gurveen - Issue #3: helper fallback
+from limits import parse as parse_rate_limit  # Gurveen - Issue #3: parse human-friendly policies
 # Support running as a script or as a package
 try:
     from security import get_audit_logger, is_country_allowed  # when running app/app.py directly
@@ -20,6 +23,37 @@ app = Flask(__name__)
 _basedir = os.path.dirname(__file__)
 app.config.from_pyfile(os.path.join(_basedir, 'config.py'))
 db = SQLAlchemy(app)
+
+# Gurveen - Issue #3: Determine the real client IP even when behind trusted proxies/CDN.
+def _resolve_client_ip():
+    forwarded_headers = app.config.get('RATE_LIMIT_TRUSTED_IP_HEADERS') or []
+    for header in forwarded_headers:
+        value = request.headers.get(header)
+        if value:
+            candidate = value.split(',')[0].strip()
+            if candidate:
+                return candidate
+    # Fall back to Werkzeug's remote address helper when no proxy headers are present.
+    return get_remote_address()
+
+# Gurveen - Issue #3: Enforce a per-IP rate ceiling across all containers using shared storage.
+limiter = Limiter(
+    key_func=_resolve_client_ip,
+    app=app,
+    default_limits=[app.config.get('RATE_LIMIT_DEFAULT')],
+    storage_uri=app.config.get('RATE_LIMIT_STORAGE_URI'),
+    strategy='fixed-window-elastic-expiry',  # Gurveen - Issue #3: steady fairness under bursts.
+    headers_enabled=True
+)
+
+# Gurveen - Issue #3: Convert configured policy into a reusable RateLimitItem.
+def _default_rate_limit_item():
+    policy = app.config.get('RATE_LIMIT_DEFAULT') or "50 per minute"
+    try:
+        return parse_rate_limit(policy)
+    except ValueError:
+        # Gurveen - Issue #3: Fall back gracefully if operators misconfigure the limit string.
+        return parse_rate_limit("50 per minute")
 
 # Simple list of allowed mission codes for overseas voting (prototype)
 ALLOWED_MISSIONS = {"AUS-LONDON", "AUS-WASHINGTON", "AUS-TOKYO", "AUS-SINGAPORE"}
@@ -37,7 +71,7 @@ def dev_admin_login():
         return abort(404)
     # Ensure an admin exists (seed if missing)
     username = app.config.get('DEFAULT_ADMIN_USERNAME', 'admin')
-    password = app.config.get('DEFAULT_ADMIN_PASSWORD', 'USERgroup%11')
+    password = app.config.get('DEFAULT_ADMIN_PASSWORD', 'SecureAdm#12')
     user = UserAccount.query.filter_by(username=username).first()
     if not user:
         user = UserAccount(
@@ -82,15 +116,32 @@ def _init_db():
             ))
             db.session.commit()
     # Gurveen - Issue #1: ensure default admin exists for pure UI login if not bootstrapped already.
-    default_admin_user = app.config.get('DEFAULT_ADMIN_USERNAME')
-    default_admin_pass = app.config.get('DEFAULT_ADMIN_PASSWORD')
-    if default_admin_user and default_admin_pass:
-        if not UserAccount.query.filter_by(username=default_admin_user).first():
-            db.session.add(UserAccount(
-                username=default_admin_user,
-                password_hash=generate_password_hash(default_admin_pass),
-                role='admin'
-            ))
+    default_accounts = [
+        (app.config.get('DEFAULT_ADMIN_USERNAME'), app.config.get('DEFAULT_ADMIN_PASSWORD'), 'admin'),
+        (app.config.get('DEFAULT_CLERK_USERNAME'), app.config.get('DEFAULT_CLERK_PASSWORD'), 'clerk'),
+        (app.config.get('DEFAULT_VOTER_USERNAME'), app.config.get('DEFAULT_VOTER_PASSWORD'), 'voter'),
+    ]
+    for username, password, role in default_accounts:
+        if not username or not password:
+            continue
+        user = UserAccount.query.filter_by(username=username).first()
+        if not user:
+            user = UserAccount(
+                username=username,
+                password_hash=generate_password_hash(password),
+                role=role
+            )
+            db.session.add(user)
+            db.session.commit()
+            continue
+        updates = False
+        if not check_password_hash(user.password_hash, password):
+            user.password_hash = generate_password_hash(password)
+            updates = True
+        if user.role != role:
+            user.role = role
+            updates = True
+        if updates:
             db.session.commit()
 
 @app.context_processor
@@ -98,6 +149,38 @@ def _inject_feature_flags():
     return {
         'encryption_diagnostics_enabled': _encryption_diagnostics_enabled()
     }
+
+# Gurveen - Issue #2: Enforce HTTPS (redirect) and HSTS when TLS is enabled
+@app.before_request
+def _force_https_when_enabled():
+    try:
+        if not app.config.get('TLS_ENABLE'):
+            return
+        if request.endpoint in {'healthz'}:
+            return
+        if request.is_secure:
+            return
+        # Gurveen - Issue #2: Respect common proxy header if behind reverse proxy
+        if request.headers.get('X-Forwarded-Proto', '').lower() == 'https':
+            return
+        url = request.url.replace('http://', 'https://', 1)
+        return redirect(url, code=301)
+    except Exception:
+        return
+
+# Gurveen - Issue #2: Apply strict transport and hardening headers when TLS active
+@app.after_request
+def _apply_security_headers(resp):
+    try:
+        if app.config.get('TLS_ENABLE'):
+            # Gurveen - Issue #2: 6 months HSTS, include subdomains, preload optional
+            resp.headers.setdefault('Strict-Transport-Security', 'max-age=15552000; includeSubDomains')
+        # Gurveen - Issue #2: Basic hardening
+        resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        resp.headers.setdefault('X-Frame-Options', 'DENY')
+        resp.headers.setdefault('Referrer-Policy', 'no-referrer')
+    finally:
+        return resp
 
 # Models
 class Voter(db.Model):
@@ -160,6 +243,7 @@ def home_landing():
 
 # Theo: Incident Recovery - Health endpoint for Docker healthcheck
 # Validates app liveness and DB connectivity so Docker can auto-restart and order services.
+@limiter.exempt  # Gurveen - Issue #3: keep orchestrator health probes unrestricted.
 @app.route('/healthz')
 def healthz():
     try:
@@ -732,6 +816,7 @@ def api_results():
 
 # Manual exclusion recount (prototype): ignore listed candidate IDs in tallies
 @app.route('/recount', methods=['GET', 'POST'])
+@role_required('admin', 'clerk')
 def recount():
     excluded = set()
     if request.method == 'POST':
@@ -800,7 +885,152 @@ def audit_verify():
     return jsonify({'audit_log_valid': ok})
 
 
+# Gurveen - Issue #2: Public UI for running TLS and vote integrity diagnostics (testing only)
+@app.route('/integrity_test')
+@role_required('admin')
+def integrity_test():
+    tests = []
+
+    def add_test(name: str, passed: bool, detail: str = ""):
+        tests.append({
+            'name': name,
+            'passed': bool(passed),
+            'detail': detail
+        })
+
+    tls_configured = bool(app.config.get('TLS_ENABLE'))
+    add_test('TLS configuration enabled', tls_configured, 'TLS_ENABLE flag is set to true in server configuration.' if tls_configured else 'TLS_ENABLE is false; HTTPS should be enabled before production use.')
+
+    forwarded_proto = (request.headers.get('X-Forwarded-Proto', '') or '').lower()
+    tls_in_use = request.is_secure or forwarded_proto == 'https'
+    add_test('Current session using HTTPS', tls_in_use, 'Request arrived over HTTPS.' if tls_in_use else 'Current request is not HTTPS; ensure TLS termination in front of Flask.')
+
+    audit_ok = get_audit_logger().verify()
+    add_test('Tamper-evident audit log chain valid', audit_ok, 'Audit log hash chain is intact.' if audit_ok else 'Audit log verification failed; past entries may have been altered.')
+
+    ballots_intact = True
+    ballots_detail = 'All encrypted ballots decrypted successfully.'
+    try:
+        votes = Vote.query.all()
+        for vote in votes:
+            for field in ('house_preferences', 'senate_above', 'senate_below'):
+                payload = getattr(vote, field)
+                if payload:
+                    try:
+                        decrypt_ballot_value(payload)
+                    except Exception as exc:  # pragma: no cover - defensive
+                        ballots_intact = False
+                        ballots_detail = f"Decryption failed for vote #{vote.id} field '{field}': {exc}"
+                        raise
+    except Exception:
+        ballots_intact = False
+    add_test('Encrypted ballots decrypt correctly', ballots_intact, ballots_detail if ballots_intact else ballots_detail)
+
+    return render_template('integrity_test.html', tests=tests, tls_configured=tls_configured)
+
+
+@limiter.exempt  # Gurveen - Issue #3: diagnostics must not consume production quota.
+@app.route('/rate_limit_test')
+@role_required('admin')
+def rate_limit_test():
+    """Gurveen - Issue #3: UI harness verifies rate limiter health before election day."""
+    storage = limiter.limiter.storage
+    storage_backend = storage.__class__.__name__
+    storage_uri = app.config.get('RATE_LIMIT_STORAGE_URI', 'memory://')
+    storage_ok = True
+    storage_detail = 'Operational'
+    try:
+        check_fn = getattr(storage, 'check', None)
+        if callable(check_fn):
+            storage_ok = bool(check_fn())
+            storage_detail = 'Connected' if storage_ok else 'Unreachable'
+    except Exception as exc:  # pragma: no cover - defensive
+        storage_ok = False
+        storage_detail = f'Error: {exc}'
+    if storage_uri.startswith('memory://'):
+        storage_detail = 'Warning: In-memory storage cannot protect across multiple containers.'
+    limit_policy = app.config.get('RATE_LIMIT_DEFAULT') or '50 per minute'
+    return render_template(
+        'rate_limit_test.html',
+        limit_policy=limit_policy,
+        storage_uri=storage_uri,
+        storage_backend=storage_backend,
+        storage_ok=storage_ok,
+        storage_detail=storage_detail
+    )
+
+
+@limiter.exempt  # Gurveen - Issue #3: allow frequent polling without tripping limiter.
+@app.route('/rate_limit_test/window')
+@role_required('admin')
+def rate_limit_test_window():
+    """Gurveen - Issue #3: Surface remaining allowance for the tester's IP."""
+    limit_item = _default_rate_limit_item()
+    test_token = f"ui-rate-limit::{_resolve_client_ip()}"
+    reset_at, remaining = limiter.limiter.get_window_stats(limit_item, test_token)
+    reset_display = reset_at.isoformat() if hasattr(reset_at, 'isoformat') else reset_at
+    return jsonify({
+        'limit_policy': str(limit_item),
+        'remaining': remaining,
+        'window_resets_at': reset_display
+    })
+
+
+@limiter.exempt  # Gurveen - Issue #3: internal simulation should not be blocked by global caps.
+@app.route('/rate_limit_test/hit', methods=['POST'])
+@role_required('admin')
+def rate_limit_test_hit():
+    """Gurveen - Issue #3: Simulate a burst locally without hammering real vote endpoints."""
+    payload = request.get_json(silent=True) or {}
+    requested = int(payload.get('count', 1))
+    requested = max(1, min(requested, 200))
+    limit_item = _default_rate_limit_item()
+    test_token = f"ui-rate-limit::{_resolve_client_ip()}"
+    allowed = 0
+    blocked = 0
+    for _ in range(requested):
+        if limiter.limiter.hit(limit_item, test_token):
+            allowed += 1
+        else:
+            blocked = requested - allowed
+            break
+    reset_at, remaining = limiter.limiter.get_window_stats(limit_item, test_token)
+    reset_display = reset_at.isoformat() if hasattr(reset_at, 'isoformat') else reset_at
+    return jsonify({
+        'requested': requested,
+        'allowed': allowed,
+        'blocked': blocked,
+        'remaining': remaining,
+        'limit_policy': str(limit_item),
+        'window_resets_at': reset_display
+    })
+
+
+@limiter.exempt  # Gurveen - Issue #3: let QA reset diagnostics as needed.
+@app.route('/rate_limit_test/reset', methods=['POST'])
+@role_required('admin')
+def rate_limit_test_reset():
+    """Gurveen - Issue #3: Clear the synthetic test window so QA can rerun scenarios."""
+    limit_item = _default_rate_limit_item()
+    test_token = f"ui-rate-limit::{_resolve_client_ip()}"
+    reset_fn = getattr(limiter.limiter, 'reset', None)
+    if callable(reset_fn):
+        reset_fn(limit_item, test_token)
+    else:  # pragma: no cover - legacy fallback
+        clear_fn = getattr(limiter.limiter, 'clear', None)
+        if callable(clear_fn):
+            clear_fn(limit_item, test_token)
+    reset_at, remaining = limiter.limiter.get_window_stats(limit_item, test_token)
+    reset_display = reset_at.isoformat() if hasattr(reset_at, 'isoformat') else reset_at
+    return jsonify({
+        'limit_policy': str(limit_item),
+        'remaining': remaining,
+        'window_resets_at': reset_display
+    })
+
+
 @app.route('/encryption_diagnostics')
+@role_required('admin')
 def encryption_diagnostics():
     if not _encryption_diagnostics_enabled():
         return abort(404)
@@ -826,4 +1056,14 @@ def encryption_diagnostics():
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
-    app.run(host="0.0.0.0")
+    # Gurveen - Issue #2: Enable HTTPS using Python stdlib only when configured.
+    # Gurveen - Issue #2: In production, prefer terminating TLS at a reverse proxy (e.g., nginx/Load Balancer)
+    # Gurveen - Issue #2: and keep Flask behind it. This path supports dev/self-hosted TLS.
+    cert = app.config.get('TLS_CERT_FILE')
+    key = app.config.get('TLS_KEY_FILE')
+    enable_tls = app.config.get('TLS_ENABLE', False) and cert and key
+    ssl_ctx = (cert, key) if enable_tls else None
+    # Gurveen - Issue #2: When TLS is enabled, set secure cookies if not already forced by env
+    if enable_tls:
+        app.config['SESSION_COOKIE_SECURE'] = True
+    app.run(host="0.0.0.0", ssl_context=ssl_ctx)

@@ -4,7 +4,11 @@ WORKDIR /app
 
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt
+# Gurveen - Issue #2: Ensure OpenSSL is available for auto TLS certificate generation.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
@@ -15,4 +19,5 @@ RUN chmod +x /app/docker-entrypoint.sh
 
 ENTRYPOINT ["/bin/sh", "/app/docker-entrypoint.sh"]
 
-CMD ["flask", "run", "--host=0.0.0.0"]
+# Gurveen - Issue #2: Start via python -m to leverage built-in TLS context handling.
+CMD ["python", "-m", "app.app"]

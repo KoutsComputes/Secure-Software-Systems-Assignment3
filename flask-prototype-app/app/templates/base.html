@@ -12,6 +12,12 @@
       <div class="brand">Electronic Voting Prototype</div>
       <nav class="nav">
         <a href="{{ url_for('index') }}">Home</a>
+        {% if user_role == 'admin' %}
+        <!-- Gurveen - Issue #2: expose integrity diagnostics to admin -->
+        <a href="{{ url_for('integrity_test') }}">Integrity Tests</a>
+        <!-- Gurveen - Issue #3: provide rate limit verification harness -->
+        <a href="{{ url_for('rate_limit_test') }}">Rate Limiter Test</a>
+        {% endif %}
 
         {% if session.get('user_id') %}
           {# Theo: Issue 7 - Show menu based on role #}
@@ -47,7 +53,9 @@
             <span>Results</span>
             <div class="nav-menu">
               <a href="{{ url_for('results') }}">Results</a>
-              <a href="{{ url_for('recount') }}">Recount</a>
+              {% if user_role in ['clerk','admin'] %}
+                <a href="{{ url_for('recount') }}">Recount</a>
+              {% endif %}
               {% if user_role == 'admin' %}
                 <a href="{{ url_for('import_scanned') }}">Import Scanned</a>
               {% endif %}

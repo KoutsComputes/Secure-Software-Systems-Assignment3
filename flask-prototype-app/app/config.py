@@ -27,9 +27,34 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_SECURE = os.environ.get('SESSION_COOKIE_SECURE', 'false').lower() == 'true'
 
+# Gurveen - Issue #2: TLS configuration (development/runtime)
+# Gurveen - Issue #2: Provide paths to certificate and private key to enable HTTPS using Flask's built-in SSL context.
+# Gurveen - Issue #2: Use self-signed certs for local/dev; supply real certs in production via reverse proxy/terminator.
+TLS_CERT_FILE = os.environ.get('TLS_CERT_FILE', '')
+TLS_KEY_FILE = os.environ.get('TLS_KEY_FILE', '')
+TLS_ENABLE = os.environ.get('TLS_ENABLE', 'false').lower() in {'1', 'true', 'yes'}
+
 # Theo: Issue 6 - Feature flag to enforce MFA on /vote
 ENFORCE_MFA_ON_VOTE = os.environ.get('ENFORCE_MFA_ON_VOTE', 'false').lower() == 'true'
 
 # Gurveen - Issue #1: default admin bootstrap so UI login works without CLI seeding
-DEFAULT_ADMIN_USERNAME = os.environ.get('DEFAULT_ADMIN_USERNAME', 'admin')
-DEFAULT_ADMIN_PASSWORD = os.environ.get('DEFAULT_ADMIN_PASSWORD', 'USERgroup%11')
+# Default accounts are fixed for controlled testing; overrides via env are intentionally ignored.
+DEFAULT_ADMIN_USERNAME = 'admin'
+DEFAULT_ADMIN_PASSWORD = 'SecureAdm#12'
+DEFAULT_CLERK_USERNAME = 'clerk'
+DEFAULT_CLERK_PASSWORD = 'Clerk#12AB34'
+DEFAULT_VOTER_USERNAME = 'voter'
+DEFAULT_VOTER_PASSWORD = 'Voter#56CD78'
+
+# Gurveen - Issue #3: Default rate limiting policy - restrict abusive clients while keeping voters flowing.
+RATE_LIMIT_DEFAULT = os.environ.get('RATE_LIMIT_DEFAULT', '50 per minute')
+# Gurveen - Issue #3: Central store for rate limiting counters; use Redis for cross-container consistency.
+RATE_LIMIT_STORAGE_URI = os.environ.get('RATE_LIMIT_STORAGE_URI', 'memory://')
+# Gurveen - Issue #3: Respect trusted proxy headers (comma separated) to pull the real client IP.
+RATE_LIMIT_TRUSTED_IP_HEADERS = [
+    header.strip() for header in os.environ.get(
+        'RATE_LIMIT_TRUSTED_IP_HEADERS',
+        'CF-Connecting-IP,X-Forwarded-For'
+    ).split(',')
+    if header.strip()
+]
