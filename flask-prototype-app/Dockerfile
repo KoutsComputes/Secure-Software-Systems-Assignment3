@@ -15,7 +15,9 @@ COPY . .
 ENV FLASK_DEBUG=1 \
     FLASK_APP=app.app:app
 
-RUN chmod +x /app/docker-entrypoint.sh
+# Normalise Windows line endings so Debian's /bin/sh can parse the script reliably.
+RUN sed -i 's/\r$//' /app/docker-entrypoint.sh && \
+    chmod +x /app/docker-entrypoint.sh
 
 ENTRYPOINT ["/bin/sh", "/app/docker-entrypoint.sh"]
 

@@ -1,8 +1,3 @@
-from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
+from .app import app, db
 
-app = Flask(__name__)
-app.config.from_object('app.config')
-db = SQLAlchemy(app)
-
-from app import routes
+__all__ = ["app", "db"]

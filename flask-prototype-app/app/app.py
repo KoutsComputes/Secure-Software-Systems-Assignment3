@@ -58,7 +58,7 @@ limiter = Limiter(
     app=app,
     default_limits=[app.config.get('RATE_LIMIT_DEFAULT')],
     storage_uri=app.config.get('RATE_LIMIT_STORAGE_URI'),
-    strategy='fixed-window-elastic-expiry',  # Gurveen - Issue #3: steady fairness under bursts.
+    strategy='fixed-window',  # Gurveen - Issue #3: use strategy supported by deployed Flask-Limiter build.
     headers_enabled=True
 )
 

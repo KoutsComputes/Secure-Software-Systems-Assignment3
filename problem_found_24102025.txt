@@ -1,0 +1,5 @@
+Initial note (24 Oct 2025): Running `python app/app.py` craters right away because the limiter asks for `fixed-window-elastic-expiry`, a strategy that the installed Flask-Limiter build simply doesn't ship. This configuration error blocks the server boot, so none of the routes come online.
+
+Follow-up: Swapped the limiter to the plain `fixed-window` backend that is actually present in Flask-Limiter 4.x, and collapsed the package exports so `app.__init__`, `app.models`, and `app.routes` all point at the single, configured Flask/SQLAlchemy instance in `app/app.py`. `python -m compileall app` now runs cleanly, confirming the module graph imports without the earlier bootstrap failure.
+
+Docker note: `docker-compose up` was looping because `/bin/sh` inside the python:3.9-slim images could not parse `set -e` while the entrypoint still used CRLF endings from Windows checkout. Baking a `sed -i 's/\r$//' /app/docker-entrypoint.sh` step into the Dockerfile and rebuilding normalises the script to LF, so the containers stay up instead of spamming “set: Illegal option -”.

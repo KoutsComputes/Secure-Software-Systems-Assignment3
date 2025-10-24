@@ -1,20 +1,8 @@
-from flask import Flask, render_template, request, redirect, url_for
-from .models import db, User
+"""
+Backwards compat shim so legacy imports (`from app import routes`) keep working.
+All route registrations now live in `app.app`.
+"""
 
-app = Flask(__name__)
+from .app import app, db  # re-export the configured application objects
 
-@app.route('/')
-def index():
-    users = User.query.all()
-    return render_template('index.html', users=users)
-
-@app.route('/add', methods=['GET', 'POST'])
-def add_user():
-    if request.method == 'POST':
-        username = request.form['username']
-        email = request.form['email']
-        user = User(username=username, email=email)
-        db.session.add(user)
-        db.session.commit()
-        return redirect(url_for('index'))
-    return render_template('add_user.html')
+__all__ = ["app", "db"]
