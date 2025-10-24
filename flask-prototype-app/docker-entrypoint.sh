@@ -1,5 +1,6 @@
 #!/bin/sh
 # Requirement 1: auto-provision a stable AES ballot key whenever the container boots.
+# Note: File stored with LF endings to avoid CRLF issues under bind mounts.
 set -e
 
 # Allow overrides via BALLOT_KEY_FILE; default to repo root so host volume persists it.

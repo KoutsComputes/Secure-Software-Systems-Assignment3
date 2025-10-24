@@ -18,7 +18,8 @@ services:
     restart: always
     healthcheck:
       # Gurveen - Issue #3: lightweight local health probe keeps HAProxy pool fresh.
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:5000/healthz').getcode()==200 else sys.exit(1)\" "]
+      # Use 127.0.0.1 to avoid potential IPv6 localhost (::1) resolution mismatches inside containers.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:5000/healthz').getcode()==200 else sys.exit(1)\" "]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -47,7 +48,8 @@ services:
       TLS_ENABLE: "false"
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:5000/healthz').getcode()==200 else sys.exit(1)\" "]
+      # Use 127.0.0.1 to avoid potential IPv6 localhost (::1) resolution mismatches inside containers.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://127.0.0.1:5000/healthz').getcode()==200 else sys.exit(1)\" "]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -87,14 +89,12 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
-    command: >-
-      mkdir -p /backups && echo 'Starting periodic backups to /backups' &&
-      while true; do TS=$(date +%Y%m%d-%H%M%S); mysqldump -h db -u root -p$${MYSQL_ROOT_PASSWORD} --databases flask_db > /backups/flask_db-${TS}.sql; sleep 21600; done
+    entrypoint: ["/bin/sh", "/usr/local/bin/backup-loop.sh"]
     environment:
       MYSQL_ROOT_PASSWORD: root_password
     volumes:
       - ./backups:/backups
+      - ./mysql/backup-loop.sh:/usr/local/bin/backup-loop.sh:ro
 
   db:
     image: mysql:5.7

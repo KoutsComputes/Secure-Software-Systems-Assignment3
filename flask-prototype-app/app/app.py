@@ -4,6 +4,7 @@ import os
 import uuid
 from datetime import datetime, timedelta  # Gurveen - Issue #4: present audit timestamps in the signature tester UI. Gurveen - Issue #2: TLS cert validity window.
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import text  # quell SA 2.0 deprecation warnings for textual SQL
 from werkzeug.security import generate_password_hash, check_password_hash  # Theo: Issue 6 - password hashing
 import pyotp  # Theo: Issue 6 - TOTP MFA
 import qrcode  # Theo: Issue 6 - QR code generation for TOTP setup
@@ -313,11 +314,33 @@ def home_landing():
 @limiter.exempt  # Gurveen - Issue #3: keep orchestrator health probes unrestricted.
 @app.route('/healthz')
 def healthz():
+    """Liveness probe.
+    Always return HTTP 200 so the container can become healthy even if
+    dependencies are still warming up. Surface DB status in the payload.
+    """
+    db_status = 'ok'
+    detail = ''
     try:
-        db.session.execute('SELECT 1')
-        return jsonify({'status': 'ok', 'db': 'ok'}), 200
+        db.session.execute(text('SELECT 1'))
     except Exception as e:  # pragma: no cover
-        return jsonify({'status': 'error', 'db': 'unhealthy', 'detail': str(e)}), 500
+        db_status = 'unhealthy'
+        detail = str(e)
+    payload = {'status': 'ok', 'db': db_status}
+    if detail:
+        payload['detail'] = detail
+    return jsonify(payload), 200
+
+@limiter.exempt
+@app.route('/readyz')
+def readyz():
+    """Readiness probe.
+    Return HTTP 200 only when core dependencies (DB) are reachable.
+    """
+    try:
+        db.session.execute(text('SELECT 1'))
+        return jsonify({'status': 'ready', 'db': 'ok'}), 200
+    except Exception as e:  # pragma: no cover
+        return jsonify({'status': 'not-ready', 'db': 'unhealthy', 'detail': str(e)}), 503
 
 # Theo: Issue 6 - helpers for authentication state
 def _current_user():
