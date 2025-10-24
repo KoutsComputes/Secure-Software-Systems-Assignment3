@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h1>Audit Signature Test</h1>
+  <p class="disclaimer">Admin-only diagnostics for tamper-evident audit log and Ed25519 signatures.</p>
+
+  <div class="card">
+    <h2>Chain Status</h2>
+    <p>
+      <strong>Hash Chain Valid:</strong>
+      <span class="{{ 'pass' if chain_ok else 'fail' }}">{{ 'Pass' if chain_ok else 'Fail' }}</span>
+    </p>
+    {% if log_error %}
+      <p class="fail"><strong>Log Error:</strong> {{ log_error }}</p>
+    {% endif %}
+  </div>
+
+  <div class="card" style="margin-top: 1rem;">
+    <h2>Recent Entries</h2>
+    {% if entries %}
+    <table class="integrity-table">
+      <thead>
+        <tr>
+          <th>Timestamp (UTC)</th>
+          <th>Actor</th>
+          <th>Action</th>
+          <th>MAC</th>
+          <th>Signature</th>
+          <th>Issue</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in entries %}
+          <tr class="{{ 'pass' if e.signature_valid else 'fail' }}">
+            <td>{{ e.timestamp }}</td>
+            <td>{{ e.actor }}</td>
+            <td>{{ e.action }}</td>
+            <td><code>{{ e.mac }}</code></td>
+            <td>{{ 'valid' if e.signature_valid else 'invalid' }} ({{ e.signature_alg or 'n/a' }})</td>
+            <td>{{ e.sig_issue or '' }}</td>
+          </tr>
+          <tr>
+            <td colspan="6" class="muted">
+              <div><strong>Public key (b64):</strong> <code>{{ e.public_key }}</code></div>
+              <div><strong>Signature (b64):</strong> <code>{{ e.signature }}</code></div>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+      <p>No entries yet. Perform actions (e.g., register voter, add candidate) to generate audit logs.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
+

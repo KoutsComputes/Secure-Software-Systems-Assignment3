@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h1>Encryption Diagnostics</h1>
+  <p class="disclaimer">
+    Testing-only view to demonstrate AES-GCM ballot encryption. Disable via
+    <code>ENABLE_ENCRYPTION_DIAGNOSTICS=0</code> for production.
+  </p>
+
+  <div class="grid-2">
+    <div class="card">
+      <h2>Sample Encryption</h2>
+      <p><strong>Plaintext</strong><br><code>{{ sample_plain }}</code></p>
+      <p><strong>Ciphertext (AES-GCM, nonce+ct, base64)</strong><br><code>{{ sample_cipher }}</code></p>
+    </div>
+
+    <div class="card">
+      <h2>Latest Stored Ballot</h2>
+      {% if latest_vote_id %}
+        <p><strong>Vote ID</strong><br>#{{ latest_vote_id }}</p>
+        <p><strong>Stored ciphertext</strong><br><code>{{ stored_cipher }}</code></p>
+        <p><strong>Decrypted plaintext</strong><br><code>{{ stored_plain }}</code></p>
+      {% else %}
+        <p>No votes recorded yet. Cast a vote, then refresh this page.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="muted" style="margin-top:1rem;">
+    Note: diagnostics render decrypted values only within this admin-only page
+    and only while the diagnostics flag is enabled.
+  </div>
+</section>
+{% endblock %}
+
