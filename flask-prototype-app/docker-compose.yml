@@ -14,7 +14,7 @@ services:
       BOOTSTRAP_ADMIN_PASSWORD: password  # Theo: Issue 8 - admin bootstrap for backend RBAC testing
       RATE_LIMIT_STORAGE_URI: redis://redis:6379/0  # Gurveen - Issue #3: shared token bucket
       RATE_LIMIT_DEFAULT: "50 per minute"  # Gurveen - Issue #3: per-IP ceiling
-      TLS_ENABLE: "false"  # Gurveen - Issue #2/#3: terminate TLS at edge proxy in this topology
+      TLS_ENABLE: "true"  # Gurveen, Mitbhai Chatrola - Issue #2/#3: terminate TLS at edge proxy in this topology
     restart: always
     healthcheck:
       # Gurveen - Issue #3: lightweight local health probe keeps HAProxy pool fresh.
@@ -29,7 +29,7 @@ services:
       redis:
         condition: service_started
 
-  app_secondary:     # Mitbhai Chatrola: ISSUE 18 - Multiple Instances
+  app_secondary:     # Mitbhai Chatrola: ISSUE 18 - Multiple Instances through which we can reduce downtime
     build: .
     volumes:
       - ./:/app
@@ -98,7 +98,7 @@ services:
       retries: 5
       start_period: 20s
 
-  db_replica:     # Mitbhai Chatrola: Secondary MySQL replica (read-only)
+  db_replica:     # Mitbhai Chatrola: ISSUE 18- Secondary MySQL replica (read-only)
     image: mysql:5.7
     restart: always
     command: --server-id=2 --relay-log=mysqld-relay-bin --read_only=1 --binlog_do_db=flask_db
