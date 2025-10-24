@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block content %}
+  <section class="grid-2">
+    <div class="card">
+      <h2>Pending Approvals</h2>
+      {% if pending %}
+      <table class="table">
+        <tr><th>Username</th><th>Role</th><th>Action</th></tr>
+        {% for u in pending %}
+        <tr>
+          <td>{{ u.username }}</td>
+          <td>{{ u.role }}</td>
+          <td>
+            <form method="post" class="inline-form">
+              <input type="hidden" name="username" value="{{ u.username }}">
+              <input type="hidden" name="approve" value="1">
+              <button class="btn" type="submit">Approve</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}
+        <p class="muted">No pending users.</p>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>Eligible Users</h2>
+      <table class="table">
+        <tr><th>Username</th><th>Role</th></tr>
+        {% for u in eligible %}
+        <tr><td>{{ u.username }}</td><td>{{ u.role }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+  </section>
+{% endblock %}
+

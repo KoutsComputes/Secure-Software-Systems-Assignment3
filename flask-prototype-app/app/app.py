@@ -214,7 +214,8 @@ def _init_db():
             user = UserAccount(
                 username=username,
                 password_hash=generate_password_hash(password),
-                role=role
+                role=role,
+                is_eligible=True
             )
             db.session.add(user)
             db.session.commit()
@@ -306,6 +307,8 @@ class UserAccount(db.Model):
     voter_id = db.Column(db.Integer, db.ForeignKey('voter.id'), nullable=True)
     # Theo: Issue 8 - RBAC in database: role persisted on the user
     role = db.Column(db.String(32), db.ForeignKey('role.name'), nullable=False, default='voter')
+    # RBAC: clerk approval gate for voter eligibility
+    is_eligible = db.Column(db.Boolean, nullable=False, default=False)
 
 # Theo: Issue 8 - Roles table in database (separate DB layer for RBAC)
 class Role(db.Model):
@@ -622,24 +625,70 @@ def admin_users():
         return redirect(url_for('admin_users'))
     users = UserAccount.query.order_by(UserAccount.username).all()
     roles = Role.query.order_by(Role.name).all()
-    # Simple inline admin UI (Theo)
-    options = ''.join(f'<option value="{r.name}">{r.name}</option>' for r in roles)
-    rows = ''.join(
-        f'<tr><td>{u.username}</td><td>{u.role}</td>'
-        f'<td><form method="post" style="display:inline">'
-        f'<input type="hidden" name="username" value="{u.username}">' \
-        f'<select name="role">{options}</select> <button type="submit">Change</button></form></td></tr>'
-        for u in users
-    )
-    return f"""
-    <!-- Theo: Issue 8 - Admin user role management -->
-    <h2>Manage User Roles</h2>
-    <table border="1" cellpadding="6">
-      <tr><th>Username</th><th>Role</th><th>Action</th></tr>
-      {rows}
-    </table>
-    <p><a href='{url_for('dashboard_admin')}'>Back to admin dashboard</a></p>
-    """
+    return render_template('admin_users.html', users=users, roles=roles)
+
+# Admin: manage accounts (create/delete + role change convenience)
+@app.route('/admin/accounts', methods=['GET', 'POST'])
+@role_required('admin')
+def admin_accounts():
+    if request.method == 'POST':
+        action = request.form.get('action', '')
+        if action == 'create':
+            new_username = (request.form.get('new_username') or '').strip()
+            new_password = request.form.get('new_password') or ''
+            new_role = (request.form.get('new_role') or 'voter').strip()
+            if not new_username or not new_password:
+                flash('Username and password required')
+                return redirect(url_for('admin_accounts'))
+            if UserAccount.query.filter_by(username=new_username).first():
+                flash('User already exists')
+                return redirect(url_for('admin_accounts'))
+            if not Role.query.get(new_role):
+                new_role = 'voter'
+            u = UserAccount(
+                username=new_username,
+                password_hash=generate_password_hash(new_password),
+                role=new_role,
+                is_eligible=True
+            )
+            db.session.add(u)
+            db.session.commit()
+            flash('User created')
+            return redirect(url_for('admin_accounts'))
+        if action == 'delete':
+            username = (request.form.get('username') or '').strip()
+            u = UserAccount.query.filter_by(username=username).first()
+            if not u:
+                flash('User not found')
+            else:
+                db.session.delete(u)
+                db.session.commit()
+                flash('User deleted')
+            return redirect(url_for('admin_accounts'))
+        # Fallback: treat as role change, reuse admin_users POST
+        return admin_users()
+    users = UserAccount.query.order_by(UserAccount.username).all()
+    roles = Role.query.order_by(Role.name).all()
+    return render_template('admin_accounts.html', users=users, roles=roles)
+
+# Clerk: approve voter eligibility
+@app.route('/clerk_approvals', methods=['GET', 'POST'])
+@role_required('clerk', 'admin')
+def clerk_approvals():
+    if request.method == 'POST':
+        username = (request.form.get('username') or '').strip()
+        approve = request.form.get('approve') == '1'
+        u = UserAccount.query.filter_by(username=username).first()
+        if not u:
+            flash('User not found')
+        else:
+            u.is_eligible = bool(approve)
+            db.session.commit()
+            flash('Updated eligibility')
+        return redirect(url_for('clerk_approvals'))
+    pending = UserAccount.query.filter_by(is_eligible=False).order_by(UserAccount.username).all()
+    eligible = UserAccount.query.filter_by(is_eligible=True).order_by(UserAccount.username).all()
+    return render_template('clerk_approvals.html', pending=pending, eligible=eligible)
 
 # Voter Registration & Enrolment
 @app.route('/register_voter', methods=['GET', 'POST'])
