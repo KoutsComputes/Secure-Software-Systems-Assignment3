@@ -1,9 +1,22 @@
 {% extends 'base.html' %}
 {% block content %}
   <section class="hero">
-    <div class="card">
-      <h1>Electronic Voting Prototype</h1>
-      <p>Explore enrolment, candidate management, voting, and results.</p>
+    <div class="hero-badge">Secure election sandbox</div>
+    <h1>Electronic Voting Prototype</h1>
+    <p>Reliably demonstrate enrolment, candidate management, and voting flows with strong authentication, encryption, and audit diagnostics.</p>
+    <div class="hero-actions">
+      {% if session.get('user_id') %}
+        <a class="btn" href="{{ url_for('secure_vote') }}">Launch Secure Vote</a>
+        <a class="btn-ghost" href="{{ url_for('dashboard_root') }}">Open Role Dashboard</a>
+      {% else %}
+        <a class="btn" href="{{ url_for('auth_login') }}">Sign In</a>
+        <a class="btn-ghost" href="{{ url_for('auth_register') }}">Create Account</a>
+      {% endif %}
+    </div>
+    <div class="hero-points">
+      <span>End-to-end encrypted ballots</span>
+      <span>Role-based access controls</span>
+      <span>Real-time integrity diagnostics</span>
     </div>
   </section>
 

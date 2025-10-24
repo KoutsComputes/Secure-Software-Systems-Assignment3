@@ -243,8 +243,10 @@ def _apply_security_headers(resp):
         resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
         resp.headers.setdefault('X-Frame-Options', 'DENY')
         resp.headers.setdefault('Referrer-Policy', 'no-referrer')
-    finally:
-        return resp
+    except Exception:
+        # Keep response flowing even if header injection fails (logging handled upstream).
+        pass
+    return resp
 
 # Models
 class Voter(db.Model):
