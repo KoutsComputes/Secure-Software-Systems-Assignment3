@@ -19,9 +19,8 @@
     <div class="card">
       <h2>Access Control</h2>
       <div class="links">
-        <a class="btn" href="{{ url_for('admin_users') }}">Manage User Roles</a>
-        <!-- Theo: Issue 8 - Full user management (create/delete/role) -->
-        <a class="btn btn-secondary" href="{{ url_for('admin_accounts') }}">Manage Accounts</a>
+        <!-- Theo: Issue 8 - Consolidated: manage roles via Accounts page -->
+        <a class="btn" href="{{ url_for('admin_accounts') }}">Manage Accounts</a>
         <a class="btn btn-secondary" href="{{ url_for('auth_logout') }}">Logout</a>
       </div>
     </div>

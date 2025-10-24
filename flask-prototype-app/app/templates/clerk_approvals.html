@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block content %}
+  <!-- Theo: Issue 7 - Styled Clerk Approvals -->
+  <section class="grid-2">
+    <div class="card form-card">
+      <h2>Pending Voter Approvals</h2>
+      <table class="table">
+        <tr>
+          <th>Username</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+        {% for u in pending %}
+        <tr>
+          <td>{{ u.username }}</td>
+          <td>Pending</td>
+          <td>
+            <form method="post" class="inline-form" style="display:inline">
+              <input type="hidden" name="username" value="{{ u.username }}">
+              <input type="hidden" name="action" value="approve">
+              <div class="actions"><button class="btn" type="submit">Approve</button></div>
+            </form>
+            <form method="post" class="inline-form" style="display:inline" onsubmit="return confirm('Deny and remove {{ u.username }}?')">
+              <input type="hidden" name="username" value="{{ u.username }}">
+              <input type="hidden" name="action" value="deny">
+              <div class="actions"><button class="btn btn-secondary" type="submit">Deny</button></div>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+      <div class="actions">
+        <a class="btn btn-secondary" href="{{ url_for('dashboard_clerk') }}">Back</a>
+      </div>
+    </div>
+  </section>
+{% endblock %}
+

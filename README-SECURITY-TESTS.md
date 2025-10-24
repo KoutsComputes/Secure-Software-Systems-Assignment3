@@ -261,10 +261,10 @@ Backend RBAC Testing - Issue 8 (Theo)
   - API layer: `@role_required` applied to admin/clerk routes (e.g., `/add_candidate`, `/import_scanned`, `/audit/verify`, `/dashboard/admin`, `/admin/users`, `/admin/accounts`, `/clerk/approvals`).
 
 - Steps
-  - Create or log in as an admin user; visit `http://localhost:5000/admin/users` (roles) and `http://localhost:5000/admin/accounts` (create/delete/role).
+  - Create or log in as an admin user; visit `http://localhost:5000/admin/accounts` to create/delete users and change roles.
   - Change another user's role to `clerk` or `voter`; create a test voter account from `Admin Accounts`.
   - Confirm access:
     - `voter` cannot open `/add_candidate` or `/dashboard/admin` (403).
     - `clerk` can open `/clerk/approvals` and enrolment tools; cannot open admin pages.
-    - `admin` can open `/dashboard/admin`, `/admin/users`, `/admin/accounts`, `/add_candidate`, `/import_scanned`, `/audit/verify`.
+    - `admin` can open `/dashboard/admin`, `/admin/accounts`, `/add_candidate`, `/import_scanned`, `/audit/verify`.
     - Then `docker compose up -d --build`

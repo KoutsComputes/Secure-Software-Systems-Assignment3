@@ -622,22 +622,7 @@ def clerk_approvals():
             flash('Voter denied and account removed.')
         return redirect(url_for('clerk_approvals'))
     pending = UserAccount.query.filter_by(role='voter', is_eligible=False).order_by(UserAccount.username).all()
-    rows = ''.join(
-        f"<tr><td>{u.username}</td><td>pending</td><td>"
-        f"<form method='post' style='display:inline'><input type='hidden' name='username' value='{u.username}'><input type='hidden' name='action' value='approve'><button type='submit'>Approve</button></form> "
-        f"<form method='post' style='display:inline' onsubmit=\"return confirm('Deny and remove {u.username}?')\"><input type='hidden' name='username' value='{u.username}'><input type='hidden' name='action' value='deny'><button type='submit'>Deny</button></form>"
-        f"</td></tr>"
-        for u in pending
-    )
-    return f"""
-    <!-- Theo: Issue 7 - Clerk approvals for voter eligibility -->
-    <h2>Pending Voter Approvals</h2>
-    <table border='1' cellpadding='6'>
-      <tr><th>Username</th><th>Status</th><th>Actions</th></tr>
-      {rows}
-    </table>
-    <p><a href='{url_for('dashboard_clerk')}'>Back to clerk dashboard</a></p>
-    """
+    return render_template('clerk_approvals.html', pending=pending)
 
 # Theo: Issue 8 - Admin: manage users (create/delete/role)
 @app.route('/admin/accounts', methods=['GET', 'POST'])
@@ -704,38 +689,7 @@ def admin_accounts():
             return redirect(url_for('admin_accounts'))
     users = UserAccount.query.order_by(UserAccount.username).all()
     roles = Role.query.order_by(Role.name).all()
-    options = ''.join(f'<option value="{r.name}">{r.name}</option>' for r in roles)
-    rows = ''.join(
-        f"<tr><td>{u.username}</td><td>{u.role}</td><td>{'Yes' if getattr(u,'is_eligible', False) else 'No'}</td>"
-        f"<td><form method='post' style='display:inline'>"
-        f"<input type='hidden' name='username' value='{u.username}'>"
-        f"<select name='role'>{options}</select> <button type='submit'>Change</button></form> "
-        f"<form method='post' style='display:inline' onsubmit=\"return confirm('Delete {u.username}?')\">"
-        f"<input type='hidden' name='action' value='delete'>"
-        f"<input type='hidden' name='username' value='{u.username}'><button type='submit'>Delete</button></form></td></tr>"
-        for u in users
-    )
-    create_form = f"""
-    <h3>Create User</h3>
-    <form method='post' class='form'>
-      <input type='hidden' name='action' value='create'>
-      <div class='field'><span>Username</span><input name='new_username' required></div>
-      <div class='field'><span>Password (12+)</span><input name='new_password' type='password' minlength='12' required></div>
-      <div class='field'><span>Role</span><select name='new_role'>{options}</select></div>
-      <div class='actions'><button class='btn' type='submit'>Create</button></div>
-    </form>
-    """
-    return f"""
-    <!-- Theo: Issue 8 - Admin user management (create/delete/role) -->
-    <h2>Manage Users</h2>
-    {create_form}
-    <h3>Existing Users</h3>
-    <table border='1' cellpadding='6'>
-      <tr><th>Username</th><th>Role</th><th>Eligible</th><th>Actions</th></tr>
-      {rows}
-    </table>
-    <p><a href='{url_for('dashboard_admin')}'>Back to admin dashboard</a></p>
-    """
+    return render_template('admin_accounts.html', users=users, roles=roles)
 
 # Theo: Issue 8 - Admin: manage user roles (API + UI)
 @app.route('/admin/users', methods=['GET', 'POST'])
@@ -757,24 +711,8 @@ def admin_users():
         return redirect(url_for('admin_users'))
     users = UserAccount.query.order_by(UserAccount.username).all()
     roles = Role.query.order_by(Role.name).all()
-    # Simple inline admin UI (Theo)
-    options = ''.join(f'<option value="{r.name}">{r.name}</option>' for r in roles)
-    rows = ''.join(
-        f'<tr><td>{u.username}</td><td>{u.role}</td>'
-        f'<td><form method="post" style="display:inline">'
-        f'<input type="hidden" name="username" value="{u.username}">' \
-        f'<select name="role">{options}</select> <button type="submit">Change</button></form></td></tr>'
-        for u in users
-    )
-    return f"""
-    <!-- Theo: Issue 8 - Admin user role management -->
-    <h2>Manage User Roles</h2>
-    <table border="1" cellpadding="6">
-      <tr><th>Username</th><th>Role</th><th>Action</th></tr>
-      {rows}
-    </table>
-    <p><a href='{url_for('dashboard_admin')}'>Back to admin dashboard</a></p>
-    """
+    # Theo: Render styled template so UI matches site CSS
+    return render_template('admin_users.html', users=users, roles=roles)
 
 # Voter Registration & Enrolment
 @app.route('/register_voter', methods=['GET', 'POST'])
