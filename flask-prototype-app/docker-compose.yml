@@ -3,6 +3,7 @@ services:
     build: .
     volumes:
       - ./:/app
+      - ./app/certs:/app/app/certs:ro   # ✅ Added for HTTPS/TLS local testing
     environment:
       FLASK_DEBUG: 0
       FLASK_APP: app.app:app
@@ -14,11 +15,12 @@ services:
       BOOTSTRAP_ADMIN_PASSWORD: password  # Theo: Issue 8 - admin bootstrap for backend RBAC testing
       RATE_LIMIT_STORAGE_URI: redis://redis:6379/0  # Gurveen - Issue #3: shared token bucket
       RATE_LIMIT_DEFAULT: "50 per minute"  # Gurveen - Issue #3: per-IP ceiling
-      TLS_ENABLE: "false"  # Gurveen - Issue #2/#3: terminate TLS at edge proxy in this topology
+      TLS_ENABLE: "true"  # Gurveen, Mitbhai Chatrola - Issue #2/#3/#19: terminate TLS at edge proxy in this topology, HTTPS/TLS Everywhere
+      SESSION_COOKIE_SECURE: "true"  #  Added for HTTPS security best practice
     restart: always
     healthcheck:
       # Gurveen - Issue #3: lightweight local health probe keeps HAProxy pool fresh.
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:5000/healthz').getcode()==200 else sys.exit(1)\" "]
+      test: ["CMD-SHELL", "python -c \"import ssl,urllib.request,sys; ctx=ssl._create_unverified_context(); sys.exit(0) if urllib.request.urlopen('https://localhost:5000/healthz', context=ctx).getcode()==200 else sys.exit(1)\" "]  # ✅ Updated for HTTPS
       interval: 10s
       timeout: 5s
       retries: 5
@@ -29,10 +31,11 @@ services:
       redis:
         condition: service_started
 
-  app_secondary:
+  app_secondary:     # Mitbhai Chatrola: ISSUE 18 - Multiple Instances
     build: .
     volumes:
       - ./:/app
+      - ./app/certs:/app/app/certs:ro   # Added for HTTPS/TLS local testing
     environment:
       FLASK_DEBUG: 0
       FLASK_APP: app.app:app
@@ -44,10 +47,11 @@ services:
       BOOTSTRAP_ADMIN_PASSWORD: password
       RATE_LIMIT_STORAGE_URI: redis://redis:6379/0  # Gurveen - Issue #3: shared token bucket
       RATE_LIMIT_DEFAULT: "50 per minute"  # Gurveen - Issue #3: per-IP ceiling
-      TLS_ENABLE: "false"
+      TLS_ENABLE: "true" #  Mitbhai Chatrola: ISSUE #19 HTTPS/TLS Everywhere
+      SESSION_COOKIE_SECURE: "true"  # Added for HTTPS security best practice
     restart: always
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:5000/healthz').getcode()==200 else sys.exit(1)\" "]
+      test: ["CMD-SHELL", "python -c \"import ssl,urllib.request,sys; ctx=ssl._create_unverified_context(); sys.exit(0) if urllib.request.urlopen('https://localhost:5000/healthz', context=ctx).getcode()==200 else sys.exit(1)\" "]  # ✅ Updated for HTTPS
       interval: 10s
       timeout: 5s
       retries: 5
@@ -62,14 +66,16 @@ services:
     image: haproxy:2.9
     ports:
       - "5000:5000"
+      - "443:443"  # Added to expose HTTPS if you configure HAProxy for TLS
     volumes:
       - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./app/certs:/usr/local/etc/haproxy/certs:ro  # Added for TLS termination at HAProxy (optional)
     depends_on:
       app_primary:
         condition: service_healthy
       app_secondary:
         condition: service_healthy
-    restart: always
+    restart: always    # Mitbhai Chatrola: ISSUE 18 - Ensures all critical containers automatically recover on failure.
 
   redis:
     image: redis:7-alpine
@@ -98,7 +104,7 @@ services:
       retries: 5
       start_period: 20s
 
-  db_replica:
+  db_replica:     # Mitbhai Chatrola: Secondary MySQL replica (read-only)
     image: mysql:5.7
     restart: always
     command: --server-id=2 --relay-log=mysqld-relay-bin --read_only=1 --binlog_do_db=flask_db
