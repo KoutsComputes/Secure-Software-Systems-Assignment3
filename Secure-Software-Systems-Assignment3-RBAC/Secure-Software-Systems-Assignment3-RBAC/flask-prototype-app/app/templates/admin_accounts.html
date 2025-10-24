@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% block content %}
+  <!-- Theo: Issue 8 - Styled Admin: Manage Accounts (create/delete/role) -->
+  <section class="grid-2">
+    <div class="card form-card">
+      <h2>Create User</h2>
+      <form method="post" class="form">
+        <input type="hidden" name="action" value="create">
+        <div class="field">
+          <span>Username</span>
+          <input name="new_username" required />
+        </div>
+        <div class="field">
+          <span>Password (12+)</span>
+          <input name="new_password" type="password" minlength="12" required />
+        </div>
+        <div class="field">
+          <span>Role</span>
+          <select name="new_role">
+            {% for r in roles %}
+            <option value="{{ r.name }}">{{ r.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="actions">
+          <button class="btn" type="submit">Create</button>
+          <a class="btn btn-secondary" href="{{ url_for('admin_users') }}">Manage Roles</a>
+        </div>
+      </form>
+    </div>
+
+    <div class="card form-card">
+      <h2>Existing Users</h2>
+      <table class="table">
+        <tr>
+          <th>Username</th>
+          <th>Role</th>
+          <th>Eligible</th>
+          <th>Actions</th>
+        </tr>
+        {% for u in users %}
+        <tr>
+          <td>{{ u.username }}</td>
+          <td>{{ u.role }}</td>
+          <td>{{ 'Yes' if u.is_eligible else 'No' }}</td>
+          <td>
+            <form method="post" class="inline-form">
+              <input type="hidden" name="username" value="{{ u.username }}">
+              <div class="field">
+                <select name="role">
+                  {% for r in roles %}
+                  <option value="{{ r.name }}" {% if r.name == u.role %}selected{% endif %}>{{ r.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="actions">
+                <button class="btn" type="submit">Change</button>
+              </div>
+            </form>
+            <form method="post" class="inline-form" onsubmit="return confirm('Delete {{ u.username }}?')">
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="username" value="{{ u.username }}">
+              <div class="actions">
+                <button class="btn btn-secondary" type="submit">Delete</button>
+              </div>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+      <div class="actions">
+        <a class="btn btn-secondary" href="{{ url_for('dashboard_admin') }}">Back</a>
+      </div>
+    </div>
+  </section>
+{% endblock %}
+

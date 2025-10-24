@@ -39,31 +39,37 @@
       <div class="actions">
         <button class="btn" type="submit">Submit Vote</button>
         <a class="btn btn-secondary" href="{{ url_for('index') }}">Back</a>
-  </div>
-  </form>
+      </div>
+    </form>
   </div>
   <script>
-    // Session recovery: persist form inputs locally and restore on load
+    // Requirement 15: Persist vote form data in LocalStorage for session recovery
     (function(){
+      const KEY = 'vote_form_v1';
       const form = document.querySelector('form');
-      const key = 'vote_form_cache';
-      try {
-        const cached = JSON.parse(localStorage.getItem(key) || '{}');
-        if (cached.house_preferences) document.querySelector('[name="house_preferences"]').value = cached.house_preferences;
-        if (cached.senate_above) document.querySelector('[name="senate_above"]').value = cached.senate_above;
-        if (cached.senate_below) document.querySelector('[name="senate_below"]').value = cached.senate_below;
-      } catch(e) {}
-      form.addEventListener('input', function(){
-        const state = {
-          house_preferences: document.querySelector('[name="house_preferences"]').value,
-          senate_above: document.querySelector('[name="senate_above"]').value,
-          senate_below: document.querySelector('[name="senate_below"]').value,
-        };
-        try { localStorage.setItem(key, JSON.stringify(state)); } catch(e) {}
+      function read() {
+        try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch(e){ return {}; }
+      }
+      function write(data) {
+        try { localStorage.setItem(KEY, JSON.stringify(data)); } catch(e) {}
+      }
+      function fill() {
+        const data = read();
+        if (data.voter_id) form.querySelector('[name="voter_id"]').value = data.voter_id;
+        if (data.house_preferences) form.querySelector('[name="house_preferences"]').value = data.house_preferences;
+        if (data.senate_above) form.querySelector('[name="senate_above"]').value = data.senate_above;
+        if (data.senate_below) form.querySelector('[name="senate_below"]').value = data.senate_below;
+      }
+      form.addEventListener('input', () => {
+        write({
+          voter_id: form.querySelector('[name="voter_id"]').value,
+          house_preferences: form.querySelector('[name="house_preferences"]').value,
+          senate_above: form.querySelector('[name="senate_above"]').value,
+          senate_below: form.querySelector('[name="senate_below"]').value,
+        });
       });
-      form.addEventListener('submit', function(){
-        try { localStorage.removeItem(key); } catch(e) {}
-      });
+      form.addEventListener('submit', () => { try { localStorage.removeItem(KEY); } catch(e){} });
+      document.addEventListener('DOMContentLoaded', fill);
     })();
   </script>
 {% endblock %}

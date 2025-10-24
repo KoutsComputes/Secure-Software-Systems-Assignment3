@@ -2,6 +2,18 @@
 {% block content %}
   <!-- Theo: Issue 7 - Frontend RBAC: Voter dashboard (styled) -->
   <section class="grid-3">
+    <!-- Theo: Issue 7 - Show eligibility status to voter -->
+    {% if current_user and not current_user.is_eligible %}
+    <div class="card" style="border-color:#fecaca;">
+      <h2 style="color:#b91c1c;">Eligibility Required</h2>
+      <p class="muted">A polling clerk must verify your eligibility before you can vote.</p>
+    </div>
+    {% else %}
+    <div class="card" style="border-color:#bbf7d0;">
+      <h2 style="color:#166534;">You are eligible</h2>
+      <p class="muted">You can proceed to cast your vote.</p>
+    </div>
+    {% endif %}
     <div class="card">
       <h2>Voting</h2>
       <a class="btn" href="{{ url_for('secure_vote') }}">Cast Vote (MFA)</a>

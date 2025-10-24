@@ -44,31 +44,35 @@
       <div class="actions">
         <button class="btn" type="submit">Submit Vote</button>
         <a class="btn btn-secondary" href="{{ url_for('index') }}">Back</a>
-  </div>
-  </form>
+      </div>
+    </form>
   </div>
   <script>
-    // Session recovery for overseas form
+    // Requirement 15: Persist overseas vote form in LocalStorage
     (function(){
+      const KEY = 'vote_overseas_form_v1';
       const form = document.querySelector('form');
-      const key = 'vote_overseas_form_cache';
-      try {
-        const cached = JSON.parse(localStorage.getItem(key) || '{}');
-        if (cached.house_preferences) document.querySelector('[name="house_preferences"]').value = cached.house_preferences;
-        if (cached.senate_above) document.querySelector('[name="senate_above"]').value = cached.senate_above;
-        if (cached.senate_below) document.querySelector('[name="senate_below"]').value = cached.senate_below;
-      } catch(e) {}
-      form.addEventListener('input', function(){
-        const state = {
-          house_preferences: document.querySelector('[name="house_preferences"]').value,
-          senate_above: document.querySelector('[name="senate_above"]').value,
-          senate_below: document.querySelector('[name="senate_below"]').value,
-        };
-        try { localStorage.setItem(key, JSON.stringify(state)); } catch(e) {}
+      function read() { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch(e){ return {}; } }
+      function write(d){ try { localStorage.setItem(KEY, JSON.stringify(d)); } catch(e){} }
+      function fill(){
+        const d = read();
+        if (d.mission_code) form.querySelector('[name="mission_code"]').value = d.mission_code;
+        if (d.voter_id) form.querySelector('[name="voter_id"]').value = d.voter_id;
+        if (d.house_preferences) form.querySelector('[name="house_preferences"]').value = d.house_preferences;
+        if (d.senate_above) form.querySelector('[name="senate_above"]').value = d.senate_above;
+        if (d.senate_below) form.querySelector('[name="senate_below"]').value = d.senate_below;
+      }
+      form.addEventListener('input', () => {
+        write({
+          mission_code: form.querySelector('[name="mission_code"]').value,
+          voter_id: form.querySelector('[name="voter_id"]').value,
+          house_preferences: form.querySelector('[name="house_preferences"]').value,
+          senate_above: form.querySelector('[name="senate_above"]').value,
+          senate_below: form.querySelector('[name="senate_below"]').value,
+        });
       });
-      form.addEventListener('submit', function(){
-        try { localStorage.removeItem(key); } catch(e) {}
-      });
+      form.addEventListener('submit', () => { try { localStorage.removeItem(KEY); } catch(e){} });
+      document.addEventListener('DOMContentLoaded', fill);
     })();
   </script>
 {% endblock %}

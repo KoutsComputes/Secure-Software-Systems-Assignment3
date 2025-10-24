@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title or 'Electronic Voting Prototype' }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <header class="site-header">
+    <div class="container header-inner">
+      <div class="brand">Electronic Voting Prototype</div>
+      <nav class="nav" aria-label="Primary navigation">
+        <a href="{{ url_for('index') }}">Home</a>
+        {% if user_role == 'admin' %}
+          {% if encryption_diagnostics_enabled %}
+            <a href="{{ url_for('encryption_diagnostics') }}">Encryption Check</a>
+          {% endif %}
+          <a href="{{ url_for('integrity_test') }}">Integrity Tests</a>
+          <a href="{{ url_for('rate_limit_test') }}">Rate Limiter Tests</a>
+        {% endif %}
+
+        {% if session.get('user_id') %}
+          {# Theo: Issue 7 - Show menu based on role #}
+          {% if user_role in ['clerk','admin'] %}
+          <div class="nav-group">
+            <span class="nav-trigger" tabindex="0" role="button" aria-haspopup="true">Voters</span>
+            <div class="nav-menu" role="menu">
+              <a href="{{ url_for('check_enrolment') }}" role="menuitem">Check Enrolment</a>
+              <a href="{{ url_for('voters') }}" role="menuitem">View Voters</a>
+              <!-- Theo: Issue 7 - Clerk approvals navigation -->
+              <a href="{{ url_for('clerk_approvals') }}" role="menuitem">Pending Approvals</a>
+            </div>
+          </div>
+          {% endif %}
+
+          {% if user_role in ['clerk','admin'] %}
+          <div class="nav-group">
+            <span class="nav-trigger" tabindex="0" role="button" aria-haspopup="true">Candidates</span>
+            <div class="nav-menu" role="menu">
+              <a href="{{ url_for('add_candidate') }}" role="menuitem">Add Candidate</a>
+              <a href="{{ url_for('candidates') }}" role="menuitem">View Candidates</a>
+            </div>
+          </div>
+          {% endif %}
+
+          <div class="nav-group">
+            <span class="nav-trigger" tabindex="0" role="button" aria-haspopup="true">Voting</span>
+            <div class="nav-menu" role="menu">
+              <a href="{{ url_for('secure_vote') }}" role="menuitem">Vote (MFA)</a>
+              <a href="{{ url_for('vote_overseas') }}" role="menuitem">Vote (Overseas)</a>
+            </div>
+          </div>
+
+          <div class="nav-group">
+            <span class="nav-trigger" tabindex="0" role="button" aria-haspopup="true">Results</span>
+            <div class="nav-menu" role="menu">
+              <a href="{{ url_for('results') }}" role="menuitem">Results</a>
+              {% if user_role in ['clerk','admin'] %}
+                <a href="{{ url_for('recount') }}" role="menuitem">Recount</a>
+              {% endif %}
+              {% if user_role == 'admin' %}
+                <a href="{{ url_for('import_scanned') }}" role="menuitem">Import Scanned</a>
+              {% endif %}
+            </div>
+          </div>
+
+          <!-- Theo: Issue 6/7 - Account links (Login/Register or Dashboard/Logout) -->
+          <div class="nav-group">
+            <span class="nav-trigger" tabindex="0" role="button" aria-haspopup="true">Account</span>
+            <div class="nav-menu" role="menu">
+              <a href="{{ url_for('dashboard_root') }}" role="menuitem">Dashboard</a>
+              <a href="{{ url_for('auth_mfa_setup') }}" role="menuitem">MFA Setup</a>
+              <a href="{{ url_for('auth_logout') }}" role="menuitem">Logout</a>
+            </div>
+          </div>
+        {% else %}
+          <a href="{{ url_for('auth_login') }}">Login</a>
+          <a href="{{ url_for('auth_register') }}">Register</a>
+        {% endif %}
+      </nav>
+    </div>
+  </header>
+
+  <main class="container" id="main-content" tabindex="-1">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="flash">
+          {% for m in messages %}<div class="flash-item">{{ m }}</div>{% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="site-footer">
+    <div class="container">&copy; Prototype</div>
+  </footer>
+</body>
+</html>

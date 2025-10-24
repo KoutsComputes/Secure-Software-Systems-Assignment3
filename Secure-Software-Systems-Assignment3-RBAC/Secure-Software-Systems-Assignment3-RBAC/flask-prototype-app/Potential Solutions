@@ -1,0 +1,119 @@
+1. Voter Confidentiality
+Potential Solutions: AES encryption, RSA encryption, Homomorphic encryption.
+Pros & Cons: AES is fast, symmetric, and efficient for encrypting large data. RSA is secure but slower and less efficient for large datasets. Homomorphic encryption allows computation on encrypted data but is computationally expensive and impractical.
+Chosen Solution: AES encryption.
+Justification: AES provides strong encryption and efficient performance, ensuring voter confidentiality without excessive computational overhead.
+
+2. Vote Integrity
+Potential Solutions: TLS, Digital Signatures, Hash Verification.
+Pros & Cons: TLS secures data in transit but not at rest. Digital signatures provide authenticity but require extra key management. Hash verification detects tampering but does not prevent it.
+Chosen Solution: TLS.
+Justification: TLS ensures integrity and security of votes during transmission with minimal cost and easy integration.
+
+3. Availability (DDoS)
+Potential Solutions: Rate limiting (without nginx), Multiple Docker containers, Cloud-based load balancing.
+Pros & Cons: Rate limiting prevents excessive request floods but can block legitimate high-traffic users. Multiple Docker containers allow scalability and redundancy but require orchestration. Cloud load balancing is effective but costly.
+Chosen Solution: Rate limiting (without nginx) + Multiple Docker.
+Justification: This approach provides horizontal scalability and protection from DDoS attacks at a low cost without external dependencies.
+
+4. Non-Repudiation
+Potential Solutions: JSON Web Tokens, Digital Signatures, Blockchain Logging.
+Pros & Cons: JWT is lightweight and simple but can be compromised if tokens are leaked. Digital signatures are legally strong but add complexity. Blockchain is immutable but expensive and complex to maintain.
+Chosen Solution: JSON Web Tokens.
+Justification: JWT offers efficient, stateless verification of user actions and ensures accountability with minimal performance impact.
+
+5. Incident Recovery
+Potential Solutions: Manual container restart, Docker auto-restart, Kubernetes orchestration.
+Pros & Cons: Manual restart is simple but slow. Docker auto-restart provides quick recovery but must be configured carefully. Kubernetes automates recovery but is overly complex for smaller systems.
+Chosen Solution: Docker status + automatically make docker up and link parts of application + auto-restart.
+Justification: This single automated Docker-based approach ensures rapid recovery, minimal downtime, and simplified management without relying on multiple solutions.
+
+6. Voter Authentication
+Potential Solutions: Password only, Password + MFA, Biometric authentication.
+Pros & Cons: Passwords alone are insecure. MFA adds strong protection with minimal friction. Biometrics are secure but expensive and raise privacy issues.
+Chosen Solution: Password + MFA.
+Justification: Combines usability and strong authentication, effectively preventing unauthorized access at low implementation cost.
+
+7. RBAC (Frontend)
+Potential Solutions: JWT tokens, Separate dashboards, Middleware-based control.
+Pros & Cons: JWT tokens are effective but already used elsewhere. Separate dashboards clearly isolate user access but require additional UI work. Middleware offers flexibility but adds backend complexity.
+Chosen Solution: Separate dashboards.
+Justification: Avoids JWT repetition and enforces frontend role-based access through clear interface separation.
+
+8. RBAC (Backend)
+Potential Solutions: Role-based checks in API, Role management in database.
+Pros & Cons: API role checks enforce security at the logic layer but can be bypassed if misconfigured. Database roles ensure security at the data layer but require structured schema design.
+Chosen Solution: ROLE IN API AND IN DATABASE (two separate requirements).
+Justification: Using both API-level and database-level roles ensures consistent and layered backend access control.
+
+9. Maintain Logging
+Potential Solutions: Mutable logs, Append-only logs, External logging systems.
+Pros & Cons: Mutable logs risk tampering. Append-only logs are secure but can grow large. External systems are powerful but expensive.
+Chosen Solution: Logs are append only by default.
+Justification: Ensures tamper-resistant, trustworthy logging without added complexity.
+
+10. Vote Verifiability
+Potential Solutions: SHA-256 hash receipts, Metadata-based receipts, Public ledger verification.
+Pros & Cons: Hashes ensure integrity but lack transparency. Metadata-based receipts improve verifiability. Public ledgers are transparent but complex.
+Chosen Solution: Receipt number: instead of sha-256, location, time, other details, construct a formula for the function.
+Justification: Provides verifiable, unique receipt identifiers using vote metadata, ensuring both transparency and confidentiality.
+
+11. Automatic Backups
+Potential Solutions: Manual backups, Master-slave replication, Cloud sync.
+Pros & Cons: Manual backups are error-prone. Master-slave replication provides real-time redundancy. Cloud sync is reliable but expensive.
+Chosen Solution: Master-slave instances.
+Justification: Ensures automatic, live redundancy and rapid recovery without human intervention.
+
+12. Geolocation Restrictions
+Potential Solutions: Nginx GeoIP, Cloudflare geo-blocking, Application-level filtering.
+Pros & Cons: Nginx GeoIP is efficient and direct. Cloudflare is easy but paid. Application-level filtering is flexible but slower.
+Chosen Solution: Nginx GeoIP.
+Justification: Enables efficient server-side location-based restrictions without external dependencies.
+
+13. API Rate Limiting
+Potential Solutions: Nginx limit_req, Redis-based limiter, Token bucket algorithm.
+Pros & Cons: Nginx limit_req is stable but overused. Redis is scalable but adds setup overhead. Token bucket is simple but less persistent.
+Chosen Solution: limit_req (but not with nginx, alternative method).
+Justification: Implements efficient API rate limiting without relying on nginx, ensuring fair resource allocation and protection from abuse.
+
+14. Caching Common Data
+Potential Solutions: Static files, Cookies, Request parameters, Redis cache.
+Pros & Cons: Static files are efficient but static. Cookies and request parameters are lightweight but can become outdated. Redis is powerful but complex.
+Chosen Solution: Static files + Cookies or request parameters.
+Justification: Provides fast and simple caching for frequently used data without extra infrastructure cost.
+
+15. Session Recovery
+Potential Solutions: LocalStorage, Redis-backed sessions, Cookies.
+Pros & Cons: LocalStorage is persistent but exposed to XSS. Redis offers central management but requires setup. Cookies are simple but temporary.
+Chosen Solution: LocalStorage.
+Justification: Enables persistent and client-side session recovery with minimal complexity.
+
+16. Input Validation
+Potential Solutions: Input validation frameworks, ORM parameterized queries, Manual sanitization.
+Pros & Cons: Validation frameworks reduce risk but require integration. ORM queries prevent injection but depend on ORM usage. Manual sanitization is flexible but error-prone.
+Chosen Solution: SQL injection attack prevention on input validation.
+Justification: Prevents attackers from injecting malicious SQL to alter votes, results, or user data by ensuring only valid inputs are accepted and executed.
+
+17. Saved Backups
+Potential Solutions: Local backup, Cloud backup, Hybrid system.
+Pros & Cons: Local backups are fast but vulnerable to local failure. Cloud backups are offsite but costly. Hybrid setups offer balance but require configuration.
+Chosen Solution: Hybrid (local + weekly cloud).
+Justification: Provides redundancy and protection against data loss through both local speed and cloud resilience.
+
+18. Minimal Downtime
+Potential Solutions: Nginx load balancing, Multiple containers, Failover systems.
+Pros & Cons: Nginx is effective but overused. Multiple containers allow load distribution but need management. Failover systems are resilient but expensive.
+Chosen Solution: Load balance (2 containers).
+Justification: Ensures minimal downtime by distributing load across two containers without using nginx.
+
+19. HTTPS/TLS
+Potential Solutions: SQL injection attack prevention on input validation, Web Application Firewall, ORM-based query sanitization.
+Pros & Cons: SQL injection prevention eliminates database manipulation. WAF provides wider protection but is costly. ORM adds security but depends on framework support.
+Chosen Solution: SQL injection attack prevention on input validation.
+Justification: Prevents attackers from injecting malicious SQL that could alter votes, results, or user data, ensuring that only valid and intended queries run, thus maintaining system integrity and data safety.
+
+20. URL Validation
+Potential Solutions: Whitelist checking, SQL injection prevention on URLs, Regex validation.
+Pros & Cons: Whitelisting ensures only valid endpoints are accessed but requires maintenance. SQL injection prevention on URLs ensures URLs cannot manipulate SQL queries. Regex validation is flexible but can block valid URLs if misused.
+Chosen Solution: SQL injection attack URLs.
+Justification: Whitelist checking and SQL injection prevention protect against crafted malicious URLs designed to tamper with endpoints or redirect users to phishing sites, ensuring the integrity of the application's routing and query structure.

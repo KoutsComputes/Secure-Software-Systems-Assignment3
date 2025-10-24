@@ -73,10 +73,6 @@ class DigitalSignatureManager:
             priv_bytes = priv_file.read()
         return Ed25519PrivateKey.from_private_bytes(priv_bytes)
 
-    # Expose private/public key objects for JWT signing when EdDSA is required.
-    def get_private_key(self, actor: str) -> Ed25519PrivateKey:
-        return self._load_private_key(actor)
-
     def get_public_key_b64(self, actor: str) -> str:
         # Gurveen - Issue #4: expose public keys in base64 so auditors can export them into separate tooling for signature validation.
         self._ensure_keys(actor)
@@ -278,20 +274,7 @@ def is_country_allowed() -> bool:
     allowed_set = {c.strip().upper() for c in allowed.split(',') if c.strip()}
     country = request.headers.get('CF-IPCountry')
     if not country:
-        # Try local GeoIP lookup when configured
-        db_path = current_app.config.get('GEOIP_DB_PATH', '')
-        if db_path and os.path.exists(db_path):
-            try:
-                from geoip2.database import Reader  # type: ignore
-                with Reader(db_path) as reader:
-                    ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-                    ip = (ip or '').split(',')[0].strip()
-                    if ip:
-                        resp = reader.country(ip)
-                        country = (resp.country.iso_code or '').upper()
-            except Exception:
-                country = None
-        if not country:
-            # Conservatively deny when policy is set and country unknown.
-            return False
+        # If not behind Cloudflare, allow unless explicitly configured to block unknown.
+        # Conservatively deny when policy is set and country unknown.
+        return False
     return country.upper() in allowed_set

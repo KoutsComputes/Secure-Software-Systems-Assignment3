@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block content %}
+  <h2>Vote Receipt</h2>
+  <p>Keep this receipt to verify your vote was counted.</p>
+  <pre style="padding: 8px; background: #f0f0f0;">{{ receipt }}</pre>
+  <p>You can verify later at <a href="{{ url_for('verify') }}">Verify Vote</a>.</p>
+{% endblock %}
+
