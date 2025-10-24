@@ -12,11 +12,12 @@
       <div class="brand">Electronic Voting Prototype</div>
       <nav class="nav">
         <a href="{{ url_for('index') }}">Home</a>
-        <!-- Gurveen - Issue #2: expose integrity diagnostics publicly for testing convenience -->
-        <a href="{{ url_for('integrity_test') }}">Integrity Tests</a>
         {% if user_role == 'admin' %}
-        <!-- Gurveen - Issue #3: provide rate limit verification harness -->
-        <a href="{{ url_for('rate_limit_test') }}">Rate Limiter Test</a>
+          {% if encryption_diagnostics_enabled %}
+            <a href="{{ url_for('encryption_diagnostics') }}">Encryption Check</a>
+          {% endif %}
+          <a href="{{ url_for('integrity_test') }}">Integrity Tests</a>
+          <a href="{{ url_for('rate_limit_test') }}">Rate Limiter Tests</a>
         {% endif %}
 
         {% if session.get('user_id') %}
@@ -31,7 +32,7 @@
           </div>
           {% endif %}
 
-          {% if user_role == 'admin' %}
+          {% if user_role in ['clerk','admin'] %}
           <div class="nav-group">
             <span>Candidates</span>
             <div class="nav-menu">

@@ -150,7 +150,7 @@ def dev_admin_login():
 @app.before_first_request
 def _init_db():
     db.create_all()
-    # Theo: Issue 8 - Seed default roles (DB‑level RBAC)
+    # Theo: Issue 8 - Seed default roles (DB-level RBAC)
     try:
         existing = {r.name for r in Role.query.all()}
     except Exception:
@@ -648,7 +648,7 @@ def update_address():
 
 # Candidate Management
 @app.route('/add_candidate', methods=['GET', 'POST'])
-@role_required('admin')  # Theo: Issue 8 - API RBAC enforcement (admin only)
+@role_required('admin', 'clerk')  # Theo: Issue 8 - allow clerks and admins to manage candidates
 def add_candidate():
     if request.method == 'POST':
         name = request.form['name']
@@ -658,7 +658,8 @@ def add_candidate():
         candidate = Candidate(name=name, party=party, order=order)
         db.session.add(candidate)
         db.session.commit()
-        get_audit_logger().log('add_candidate', actor='admin', details={'name': name, 'party': party, 'order': order})
+        actor = (_current_user().username if _current_user() else 'system')
+        get_audit_logger().log('add_candidate', actor=actor, details={'name': name, 'party': party, 'order': order})
         flash('Candidate added!')
         return redirect(url_for('index'))
     return render_template('add_candidate.html')

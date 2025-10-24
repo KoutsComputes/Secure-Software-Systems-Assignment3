@@ -23,7 +23,7 @@
     <div class="card">
       <h2>Candidates</h2>
       <div class="links">
-        {% if user_role == 'admin' %}
+        {% if user_role in ['clerk', 'admin'] %}
         <a class="btn" href="{{ url_for('add_candidate') }}">Add Candidate</a>
         {% endif %}
         <a class="btn" href="{{ url_for('candidates') }}">View Candidates</a>

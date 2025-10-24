@@ -88,7 +88,7 @@ Availability and DDOS Resilience - Issue 3 (Gurveen)
 
 - Tests
   1. **Cluster Health via UI**
-     - Browse to `http://localhost:5000/rate_limit_test` (or use **Rate Limiter Test** in the nav). Unauthenticated users are redirected to the login page.
+     - Browse to `http://localhost:5000/rate_limit_test` (or use **Rate Limiter Tests** in the nav). Unauthenticated users are redirected to the login page.
      - Confirm summary cards show:
        - Policy = `50 per minute` (or your overridden value).
        - Storage backend = `RedisStorage` targeting `redis://redis:6379/0`.
@@ -136,11 +136,11 @@ Non-Repudiation - Issue 4 (Gurveen)
 - Tests
   1. Navigate to `http://localhost:5000/home` and authenticate as the admin.
   2. In the admin dashboard, select **Digital Signature Test (Admin)**. A warning banner reminds you this diagnostic is for testing-only use.
-  3. Perform several actions (e.g., cast a vote, update a voter address, import scanned ballots). Refresh the Digital Signature Test page—new entries should appear with:
+  3. Perform several actions (e.g., cast a vote, update a voter address, import scanned ballots). Refresh the Digital Signature Test page-new entries should appear with:
      - Signature Status for untampered entries.
      - `ed25519` listed under Signature Algorithm.
      - Truncated base64 values for the signature and public key columns.
-  4. Confirm the “Hash Chain Integrity” panel shows a success message. If it reports failure, review `app/logs/audit.log` for unexpected edits.
+  4. Confirm the "Hash Chain Integrity" panel shows a success message. If it reports failure, review `app/logs/audit.log` for unexpected edits.
 
 - Disclaimer
   - The Digital Signature Test dashboard is provided for **testing purposes only**. Auditors should export the full log and validate signatures using independent tooling before formal certification.
