@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environments & tooling
+.venv/
+venv/
+ENV/
+env/
+.env
+.env.*
+.python-version
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Flask/DB
+instance/
+*.db
+*.sqlite
+*.sqlite3
+
+# Gurveen - Issue #4: keep generated signing keys out of version control so accidental pushes never leak private audit credentials.
+app/signing_keys/
+
+# Docker (optional)
+*.log

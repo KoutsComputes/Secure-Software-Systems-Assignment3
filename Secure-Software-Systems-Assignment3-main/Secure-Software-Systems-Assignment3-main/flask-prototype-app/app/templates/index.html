@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block content %}
+  <section class="hero">
+    <div class="card">
+      <h1>Electronic Voting Prototype</h1>
+      <p>Explore enrolment, candidate management, voting, and results.</p>
+    </div>
+  </section>
+
+  <section class="grid-3">
+    <div class="card">
+      <h2>Voter Enrolment</h2>
+      <div class="links">
+        <a class="btn" href="{{ url_for('register_voter') }}">Register (AEC)</a>
+        <a class="btn" href="{{ url_for('check_enrolment') }}">Check Enrolment</a>
+        <a class="btn" href="{{ url_for('self_enrol') }}">Self Enrol</a>
+        <a class="btn" href="{{ url_for('update_address') }}">Update Address</a>
+        {% if user_role in ['clerk', 'admin'] %}
+        <a class="btn btn-secondary" href="{{ url_for('voters') }}">View Voters</a>
+        {% endif %}
+      </div>
+    </div>
+    <div class="card">
+      <h2>Candidates</h2>
+      <div class="links">
+        {% if user_role == 'admin' %}
+        <a class="btn" href="{{ url_for('add_candidate') }}">Add Candidate</a>
+        {% endif %}
+        <a class="btn" href="{{ url_for('candidates') }}">View Candidates</a>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Voting</h2>
+      <div class="links">
+        <a class="btn" href="{{ url_for('vote') }}">Vote (In-country)</a>
+        <a class="btn" href="{{ url_for('vote_overseas') }}">Vote (Overseas)</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid-2">
+    <div class="card">
+      <h2>Results</h2>
+      <div class="links">
+        <a class="btn" href="{{ url_for('results') }}">Results</a>
+        {% if user_role in ['clerk','admin'] %}
+        <a class="btn" href="{{ url_for('recount') }}">Recount</a>
+        {% endif %}
+        {% if user_role == 'admin' %}
+        <a class="btn" href="{{ url_for('import_scanned') }}">Import Scanned</a>
+        {% endif %}
+        <a class="btn btn-secondary" href="{{ url_for('api_results') }}" target="_blank">JSON API</a>
+      </div>
+    </div>
+    {% if encryption_diagnostics_enabled and user_role == 'admin' %}
+    <div class="card">
+      <h2>Encryption Diagnostics</h2>
+      <p>Verify AES ballot confidentiality directly from the UI.</p>
+      <div class="links">
+        <a class="btn" href="{{ url_for('encryption_diagnostics') }}">Encryption Check</a>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+{% endblock %}

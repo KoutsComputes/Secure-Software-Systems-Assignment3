@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block content %}
+  <div class="card">
+    <h1>Current Results (Prototype)</h1>
+    <p class="muted">Total votes (incl. scanned): {{ total_votes }}</p>
+    <h2>House of Representatives (First Preferences)</h2>
+    <table class="table">
+      <tr><th>Candidate</th><th>Votes</th></tr>
+      {% for name, count in house_display %}
+        <tr><td>{{ name }}</td><td>{{ count }}</td></tr>
+      {% else %}
+        <tr><td colspan="2">No votes</td></tr>
+      {% endfor %}
+    </table>
+
+    <h2>Senate Above-the-line (Party Tally)</h2>
+    <table class="table">
+      <tr><th>Party</th><th>Votes</th></tr>
+      {% for party, count in senate_party_display %}
+        <tr><td>{{ party }}</td><td>{{ count }}</td></tr>
+      {% else %}
+        <tr><td colspan="2">No ATL votes</td></tr>
+      {% endfor %}
+    </table>
+
+    <h2>Senate Below-the-line (First Preferences)</h2>
+    <table class="table">
+      <tr><th>Candidate</th><th>Votes</th></tr>
+      {% for name, count in senate_candidate_display %}
+        <tr><td>{{ name }}</td><td>{{ count }}</td></tr>
+      {% else %}
+        <tr><td colspan="2">No BTL votes</td></tr>
+      {% endfor %}
+    </table>
+
+    <div class="actions">
+      <a class="btn" href="{{ url_for('api_results') }}" target="_blank">View JSON API</a>
+      <a class="btn btn-secondary" href="{{ url_for('index') }}">Back</a>
+    </div>
+  </div>
+{% endblock %}

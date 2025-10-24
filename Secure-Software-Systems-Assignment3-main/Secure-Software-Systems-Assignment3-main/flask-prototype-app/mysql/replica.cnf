@@ -1,0 +1,6 @@
+[#] MySQL replica configuration
+[mysqld]
+server-id=2
+relay-log=mysqld-relay-bin
+read_only=1
+binlog_do_db=flask_db

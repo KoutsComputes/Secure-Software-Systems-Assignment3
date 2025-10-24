@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel">
+  <h1>Integrity Test Dashboard</h1>
+  <p class="disclaimer">
+    <!-- Gurveen - Issue #2: Testing-only disclaimer -->
+    This diagnostic view is provided for testing purposes only. It helps operators verify TLS transport and at-rest protections during development; it is not a formal assurance or a production-grade compliance check.
+  </p>
+
+  <table class="integrity-table">
+    <thead>
+      <tr>
+        <th>Test</th>
+        <th>Status</th>
+        <th>Details</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in tests %}
+      <tr class="{{ 'pass' if item.passed else 'fail' }}">
+        <td>{{ item.name }}</td>
+        <td>{{ 'Pass' if item.passed else 'Fail' }}</td>
+        <td>{{ item.detail }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="integrity-actions">
+    <form method="post">
+      <input type="hidden" name="action" value="reset_audit_log">
+      <button type="submit" class="btn btn-secondary">Reset Audit Log (testing only)</button>
+    </form>
+    <p class="muted">Always load this page via <code>https://</code> so the HTTPS checks can pass. Resetting moves the current audit log aside and starts a fresh chain for development verification.</p>
+  </div>
+</section>
+{% endblock %}

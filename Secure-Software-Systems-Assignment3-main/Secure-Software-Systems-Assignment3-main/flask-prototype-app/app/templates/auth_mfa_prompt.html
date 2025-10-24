@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+  <!-- Theo: Issue 6 - MFA Prompt during login (styled like homepage cards) -->
+  <section class="grid-2">
+    <div class="card">
+      <h2>Enter MFA Code</h2>
+      <form method="post">
+        <div class="form-row">
+          <label>6-digit code</label>
+          <input name="code" pattern="\d{6}" maxlength="6" required />
+        </div>
+        <button type="submit" class="btn">Verify</button>
+      </form>
+      <p class="hint">Need to set up? <a href="{{ url_for('auth_mfa_setup') }}">MFA Setup</a></p>
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+{% block content %}
+  <div class="card form-card">
+    <h1>Cast Your Vote</h1>
+    <form method="post" class="form">
+      <label class="field">
+        <span>Voter</span>
+        <select name="voter_id" required>
+          <option value="">-- select enrolled voter --</option>
+          {% for v in voters %}
+            <option value="{{ v.id }}">{{ v.name }} ({{ v.address }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <div class="grid-2">
+        <div>
+          <h3>House of Representatives</h3>
+          <p class="hint">Enter candidate IDs in preference order (comma-separated). First preference counted in prototype.</p>
+          <div class="list">
+          {% for c in candidates %}
+            <div class="list-item">#{{ c.id }} - {{ c.name }} ({{ c.party }})</div>
+          {% endfor %}
+          </div>
+          <textarea class="textarea" name="house_preferences" placeholder="e.g. 3,1,2"></textarea>
+        </div>
+        <div>
+          <h3>Senate</h3>
+          <p class="hint">ATL: party names; BTL: candidate IDs. You may enter either or both.</p>
+          <label class="field">
+            <span>Above the line (party names)</span>
+            <textarea class="textarea" name="senate_above" placeholder="e.g. Party A, Party B"></textarea>
+          </label>
+          <label class="field">
+            <span>Below the line (candidate IDs)</span>
+            <textarea class="textarea" name="senate_below" placeholder="e.g. 7,5,6"></textarea>
+          </label>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn" type="submit">Submit Vote</button>
+        <a class="btn btn-secondary" href="{{ url_for('index') }}">Back</a>
+  </div>
+  </form>
+  </div>
+  <script>
+    // Session recovery: persist form inputs locally and restore on load
+    (function(){
+      const form = document.querySelector('form');
+      const key = 'vote_form_cache';
+      try {
+        const cached = JSON.parse(localStorage.getItem(key) || '{}');
+        if (cached.house_preferences) document.querySelector('[name="house_preferences"]').value = cached.house_preferences;
+        if (cached.senate_above) document.querySelector('[name="senate_above"]').value = cached.senate_above;
+        if (cached.senate_below) document.querySelector('[name="senate_below"]').value = cached.senate_below;
+      } catch(e) {}
+      form.addEventListener('input', function(){
+        const state = {
+          house_preferences: document.querySelector('[name="house_preferences"]').value,
+          senate_above: document.querySelector('[name="senate_above"]').value,
+          senate_below: document.querySelector('[name="senate_below"]').value,
+        };
+        try { localStorage.setItem(key, JSON.stringify(state)); } catch(e) {}
+      });
+      form.addEventListener('submit', function(){
+        try { localStorage.removeItem(key); } catch(e) {}
+      });
+    })();
+  </script>
+{% endblock %}

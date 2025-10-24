@@ -1,0 +1,11 @@
+Flask==2.2.2
+Flask-SQLAlchemy==2.5.1
+SQLAlchemy==1.4.49
+Werkzeug==2.2.3
+PyMySQL==1.1.0
+cryptography==42.0.5
+pyotp==2.9.0  # Theo: Added for TOTP MFA (Issue 6)
+qrcode[pil]==7.4.2  # Theo: Issue 6 - QR code for TOTP provisioning
+Flask-Limiter[redis]==3.5.1  # Gurveen - Issue #3: shared rate limiting backend
+PyJWT==2.8.0  # JWT receipts (EdDSA/Ed25519) for non-repudiation
+geoip2==4.8.0  # Optional: IP->country lookup when CF-IPCountry unavailable

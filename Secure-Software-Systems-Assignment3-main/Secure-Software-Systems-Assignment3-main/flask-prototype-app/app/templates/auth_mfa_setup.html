@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block content %}
+  <!-- Theo: Issue 6 - MFA Setup (styled like homepage cards) -->
+  <section class="grid-2">
+    <div class="card">
+      <h2>MFA Setup</h2>
+      <p>Scan this in your authenticator app or enter the secret manually.</p>
+      {% if qr_b64 %}
+      <!-- Theo: Issue 6 - Inline QR code for otpauth URI -->
+      <div class="form-row">
+        <img alt="TOTP QR" src="data:image/png;base64,{{ qr_b64 }}" style="max-width:240px;border:1px solid #ddd;padding:6px;background:#fff;" />
+      </div>
+      {% endif %}
+      <div class="form-row">
+        <label>otpauth URI</label>
+        <code>{{ otpauth_uri }}</code>
+      </div>
+      <div class="form-row">
+        <label>Secret</label>
+        <code>{{ secret }}</code>
+      </div>
+      <form method="post" action="{{ url_for('auth_mfa_verify') }}">
+        <div class="form-row">
+          <label>6-digit code</label>
+          <input name="code" pattern="\d{6}" maxlength="6" required />
+        </div>
+        <button type="submit" class="btn">Verify & Enable</button>
+        <p class="hint">Issuer: {{ issuer }}</p>
+      </form>
+    </div>
+  </section>
+{% endblock %}

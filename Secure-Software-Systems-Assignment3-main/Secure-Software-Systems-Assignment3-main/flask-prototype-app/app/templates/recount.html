@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% block content %}
+  <div class="card">
+    <h1>Recount with Manual Exclusions</h1>
+    <form method="post" class="form inline-form">
+      <label class="field">
+        <span>Exclude candidate IDs (comma-separated)</span>
+        <input name="exclude_ids" value="{{ excluded }}" placeholder="e.g. 3,7">
+      </label>
+      <button class="btn" type="submit">Recompute</button>
+    </form>
+
+    <h2>House (First Prefs after exclusions)</h2>
+    <table class="table">
+      <tr><th>Candidate</th><th>Votes</th></tr>
+      {% for name, count in house_display %}
+        <tr><td>{{ name }}</td><td>{{ count }}</td></tr>
+      {% else %}
+        <tr><td colspan="2">No votes</td></tr>
+      {% endfor %}
+    </table>
+
+    <h2>Senate ATL (Party Tally)</h2>
+    <table class="table">
+      <tr><th>Party</th><th>Votes</th></tr>
+      {% for party, count in senate_party_display %}
+        <tr><td>{{ party }}</td><td>{{ count }}</td></tr>
+      {% else %}
+        <tr><td colspan="2">No ATL votes</td></tr>
+      {% endfor %}
+    </table>
+
+    <h2>Senate BTL (First Prefs after exclusions)</h2>
+    <table class="table">
+      <tr><th>Candidate</th><th>Votes</th></tr>
+      {% for name, count in senate_candidate_display %}
+        <tr><td>{{ name }}</td><td>{{ count }}</td></tr>
+      {% else %}
+        <tr><td colspan="2">No BTL votes</td></tr>
+      {% endfor %}
+    </table>
+
+    <div class="actions">
+      <a class="btn btn-secondary" href="{{ url_for('index') }}">Back</a>
+    </div>
+  </div>
+{% endblock %}

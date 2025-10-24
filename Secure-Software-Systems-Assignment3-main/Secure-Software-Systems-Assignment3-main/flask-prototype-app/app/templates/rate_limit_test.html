@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card">
+  <h2>Rate Limiter Diagnostics</h2>
+  <p class="card-lead">
+    Gurveen - Issue #3: Use this dashboard to confirm the per-IP throttle is active before election day.
+    All exercises simulate traffic locally so production voters stay unaffected.
+  </p>
+  <div class="grid stats-grid">
+    <div class="stat">
+      <h3>Policy</h3>
+      <p class="stat-value">{{ limit_policy }}</p>
+      <p class="stat-hint">Maximum allowed requests per IP address within the configured window.</p>
+    </div>
+    <div class="stat">
+      <h3>Storage Backend</h3>
+      <p class="stat-value">{{ storage_backend }}</p>
+      <p class="stat-hint">{{ storage_uri }}</p>
+    </div>
+    <div class="stat {{ 'status-ok' if storage_ok else 'status-bad' }}">
+      <h3>Backend Status</h3>
+      <p class="stat-value">{{ 'Healthy' if storage_ok else 'Unavailable' }}</p>
+      <p class="stat-hint">{{ storage_detail }}</p>
+    </div>
+  </div>
+  <div class="alert alert-warning">
+    <strong>Testing only:</strong> This page is a verification harness. Do not rely on it as the sole control against
+    denial-of-service attacks. Perform full-scale load testing and independent security reviews before production.
+  </div>
+</section>
+
+<section class="card">
+  <h2>Simulate a Burst</h2>
+  <p>
+    Fire a mini DDoS simulation from your browser. The requests are counted against a <em>diagnostic bucket</em>,
+    keeping real voter traffic untouched, yet exercising the same Redis-backed limiter logic running in production.
+  </p>
+  <form id="burst-form" class="burst-form">
+    <label for="burst-count">Requests to simulate (1-200)</label>
+    <input id="burst-count" name="count" type="number" min="1" max="200" value="55">
+    <button type="submit" class="btn">Launch Simulation</button>
+    <button type="button" id="reset-window" class="btn btn-secondary">Reset Window</button>
+  </form>
+  <pre id="burst-result" class="result-box">Waiting for simulation...</pre>
+</section>
+
+<section class="card">
+  <h2>Current Window</h2>
+  <p>Track how many more requests this IP can make before the limiter blocks the diagnostic scope.</p>
+  <div id="window-status" class="status-callout">Loading...</div>
+</section>
+
+<script>
+  const resultBox = document.getElementById('burst-result');
+  const windowStatus = document.getElementById('window-status');
+  const form = document.getElementById('burst-form');
+  const resetBtn = document.getElementById('reset-window');
+
+  async function refreshWindow() {
+    try {
+      const response = await fetch('{{ url_for("rate_limit_test_window") }}', { cache: 'no-store' });
+      if (!response.ok) throw new Error('Failed to fetch window status');
+      const data = await response.json();
+      windowStatus.textContent = `Remaining: ${data.remaining} | Resets at: ${data.window_resets_at}`;
+    } catch (err) {
+      windowStatus.textContent = `Error: ${err.message}`;
+    }
+  }
+
+  async function simulateBurst(count) {
+    try {
+      const response = await fetch('{{ url_for("rate_limit_test_hit") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ count })
+      });
+      if (!response.ok) throw new Error('Simulation failed');
+      const data = await response.json();
+      resultBox.textContent = [
+        `Requested: ${data.requested}`,
+        `Allowed:   ${data.allowed}`,
+        `Blocked:   ${data.blocked}`,
+        `Remaining: ${data.remaining}`,
+        `Limit:     ${data.limit_policy}`,
+        `Window reset: ${data.window_resets_at}`
+      ].join('\n');
+    } catch (err) {
+      resultBox.textContent = `Error: ${err.message}`;
+    } finally {
+      refreshWindow();
+    }
+  }
+
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    const count = Number(document.getElementById('burst-count').value);
+    simulateBurst(count);
+  });
+
+  resetBtn.addEventListener('click', async () => {
+    try {
+      const response = await fetch('{{ url_for("rate_limit_test_reset") }}', { method: 'POST' });
+      if (!response.ok) throw new Error('Reset failed');
+      const data = await response.json();
+      resultBox.textContent = `Diagnostic bucket cleared. Remaining: ${data.remaining} | Resets at: ${data.window_resets_at}`;
+    } catch (err) {
+      resultBox.textContent = `Error: ${err.message}`;
+    } finally {
+      refreshWindow();
+    }
+  });
+
+  refreshWindow();
+</script>
+{% endblock %}

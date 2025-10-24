@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+{% block content %}
+  <!-- Theo: Issue 6 - Register (refined to match site CSS) -->
+  <section class="grid-2">
+    <div class="card form-card">
+      <h2>Create Account</h2>
+      <form method="post" class="form" autocomplete="off">
+        <div class="field">
+          <span>Username</span>
+          <input name="username" placeholder="your.username" required />
+        </div>
+        <div class="field">
+          <span>Password (min 12 characters)</span>
+          <input name="password" type="password" minlength="12" placeholder="Choose a strong password" required />
+        </div>
+        <div class="actions">
+          <button type="submit" class="btn">Create account</button>
+          <a class="btn btn-secondary" href="{{ url_for('auth_login') }}">Back to login</a>
+        </div>
+        <div class="notice">After creating your account, set up MFA for added security.</div>
+      </form>
+    </div>
+  </section>
+{% endblock %}

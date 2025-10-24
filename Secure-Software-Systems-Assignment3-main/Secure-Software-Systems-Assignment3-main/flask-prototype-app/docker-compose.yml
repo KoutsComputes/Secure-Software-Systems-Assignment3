@@ -1,0 +1,153 @@
+services:
+  app_primary:
+    build: .
+    volumes:
+      - ./:/app
+    environment:
+      FLASK_DEBUG: 0
+      FLASK_APP: app.app:app
+      DATABASE_URL: mysql+pymysql://user:password@db/flask_db
+      AUDIT_LOG_PATH: /app/logs/audit.log
+      AUDIT_LOG_KEY: jamesbond123
+      SECRET_KEY: change-me-in-prod  # Theo: Issue 6 - session key for auth
+      BOOTSTRAP_ADMIN_USERNAME: admin  # Theo: Issue 8 - admin bootstrap for backend RBAC testing
+      BOOTSTRAP_ADMIN_PASSWORD: password  # Theo: Issue 8 - admin bootstrap for backend RBAC testing
+      RATE_LIMIT_STORAGE_URI: redis://redis:6379/0  # Gurveen - Issue #3: shared token bucket
+      RATE_LIMIT_DEFAULT: "50 per minute"  # Gurveen - Issue #3: per-IP ceiling
+      TLS_ENABLE: "false"  # Gurveen - Issue #2/#3: terminate TLS at edge proxy in this topology
+    restart: always
+    healthcheck:
+      # Gurveen - Issue #3: lightweight local health probe keeps HAProxy pool fresh.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:5000/healthz').getcode()==200 else sys.exit(1)\" "]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  app_secondary:     # Mitbhai Chatrola: ISSUE 18 - Multiple Instances
+    build: .
+    volumes:
+      - ./:/app
+    environment:
+      FLASK_DEBUG: 0
+      FLASK_APP: app.app:app
+      DATABASE_URL: mysql+pymysql://user:password@db/flask_db
+      AUDIT_LOG_PATH: /app/logs/audit.log
+      AUDIT_LOG_KEY: jamesbond123
+      SECRET_KEY: change-me-in-prod
+      BOOTSTRAP_ADMIN_USERNAME: admin
+      BOOTSTRAP_ADMIN_PASSWORD: password
+      RATE_LIMIT_STORAGE_URI: redis://redis:6379/0  # Gurveen - Issue #3: shared token bucket
+      RATE_LIMIT_DEFAULT: "50 per minute"  # Gurveen - Issue #3: per-IP ceiling
+      TLS_ENABLE: "false"
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:5000/healthz').getcode()==200 else sys.exit(1)\" "]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  gateway:
+    image: haproxy:2.9
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      app_primary:
+        condition: service_healthy
+      app_secondary:
+        condition: service_healthy
+    restart: always    # Mitbhai Chatrola: ISSUE 18 - Ensures all critical containers automatically recover on failure.
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  backup:
+    image: mysql:5.7
+    depends_on:
+      db:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: >-
+      mkdir -p /backups && echo 'Starting periodic backups to /backups' &&
+      while true; do TS=$(date +%Y%m%d-%H%M%S); mysqldump -h db -u root -p$${MYSQL_ROOT_PASSWORD} --databases flask_db > /backups/flask_db-${TS}.sql; sleep 21600; done
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+    volumes:
+      - ./backups:/backups
+
+  db:
+    image: mysql:5.7
+    restart: always
+    command: --server-id=1 --log-bin=mysql-bin --binlog_format=ROW --binlog_do_db=flask_db --gtid_mode=ON --enforce_gtid_consistency=ON
+    environment:
+      MYSQL_DATABASE: flask_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: root_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./mysql/init-master.sql:/docker-entrypoint-initdb.d/init-master.sql:ro
+    # Theo: Incident Recovery - DB healthcheck enables ordered startup + restart on failure
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root --password=$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  db_replica:     # Mitbhai Chatrola: Secondary MySQL replica (read-only)
+    image: mysql:5.7
+    restart: always
+    command: --server-id=2 --relay-log=mysqld-relay-bin --read_only=1 --binlog_do_db=flask_db --gtid_mode=ON --enforce_gtid_consistency=ON
+    environment:
+      MYSQL_DATABASE: flask_db
+      MYSQL_USER: user
+      MYSQL_PASSWORD: password
+      MYSQL_ROOT_PASSWORD: root_password
+    ports:
+      - "3307:3306"
+    depends_on:
+      # Theo: Start replica only after master DB is healthy
+      db:
+        condition: service_healthy
+    volumes:
+      - db_replica_data:/var/lib/mysql
+      - ./mysql/init-replica.sql:/docker-entrypoint-initdb.d/init-replica.sql:ro
+    # Theo: Incident Recovery - replica healthcheck for orchestration
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root --password=$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  db_data:
+  db_replica_data:
+
+  # Periodic logical backups will be written to ./backups on the host
+
+
