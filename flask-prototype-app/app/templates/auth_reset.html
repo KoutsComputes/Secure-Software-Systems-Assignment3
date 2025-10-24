@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block content %}
+  <!-- Theo: Issue 16 - Reset Password -->
+  <section class="grid-2">
+    <div class="card form-card">
+      <h2>Reset Password</h2>
+      <form method="post" class="form" autocomplete="off">
+        <div class="field">
+          <span>New password (min 12)</span>
+          <input name="password" type="password" minlength="12" required />
+        </div>
+        <div class="field">
+          <span>Confirm password</span>
+          <input name="confirm_password" type="password" minlength="12" required />
+        </div>
+        <div class="actions">
+          <button class="btn" type="submit">Update Password</button>
+          <a class="btn btn-secondary" href="{{ url_for('auth_login') }}">Back to login</a>
+        </div>
+      </form>
+    </div>
+  </section>
+{% endblock %}

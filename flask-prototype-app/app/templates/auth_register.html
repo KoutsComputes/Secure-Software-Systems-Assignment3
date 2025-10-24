@@ -1,10 +1,52 @@
 {% extends 'base.html' %}
 {% block content %}
-  <!-- Theo: Issue 6 - Register (refined to match site CSS) -->
+  <!-- Theo: Issue 16 - Register with identity + address and age check -->
   <section class="grid-2">
     <div class="card form-card">
       <h2>Create Account</h2>
       <form method="post" class="form" autocomplete="off">
+        <div class="field">
+          <span>First name</span>
+          <input name="first_name" required />
+        </div>
+        <div class="field">
+          <span>Last name</span>
+          <input name="last_name" required />
+        </div>
+        <div class="field">
+          <span>Date of birth</span>
+          <input name="dob" type="date" required />
+        </div>
+        <div class="field">
+          <span>Address line 1</span>
+          <input id="address_line1" name="address_line1" required />
+        </div>
+        <div class="field">
+          <span>Address line 2 (optional)</span>
+          <input id="address_line2" name="address_line2" />
+        </div>
+        <div class="field">
+          <span>Suburb</span>
+          <input id="suburb" name="suburb" required />
+        </div>
+        <div class="field">
+          <span>State</span>
+          <select id="state" name="state" required>
+            <option value="">Select state</option>
+            <option>NSW</option>
+            <option>VIC</option>
+            <option>QLD</option>
+            <option>SA</option>
+            <option>WA</option>
+            <option>TAS</option>
+            <option>NT</option>
+            <option>ACT</option>
+          </select>
+        </div>
+        <div class="field">
+          <span>Postcode</span>
+          <input id="postcode" name="postcode" pattern="\d{4}" maxlength="4" required />
+        </div>
         <div class="field">
           <span>Username</span>
           <input name="username" placeholder="your.username" required />
@@ -22,3 +64,4 @@
     </div>
   </section>
 {% endblock %}
+{# Theo: Issue 16 - Removed autocomplete; manual address only #}
