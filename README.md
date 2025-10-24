@@ -8,6 +8,7 @@ Features:
 ## Project Structure
 
 ```
+Secure-Software-Systems-Assignment3\Secure-Software-Systems-Assignment3-RBAC\Secure-Software-Systems-Assignment3-RBAC\flask-prototype-app
 flask-prototype-app/
   app/
     app.py
