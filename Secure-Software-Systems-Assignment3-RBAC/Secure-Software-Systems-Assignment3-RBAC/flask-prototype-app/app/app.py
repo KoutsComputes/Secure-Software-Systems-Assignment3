@@ -205,6 +205,25 @@ def _init_db():
                         conn.execute(text("ALTER TABLE user_account ADD COLUMN is_eligible TINYINT(1) NOT NULL DEFAULT 0"))
                     except Exception as e:
                         app.logger.warning("Theo: schema migration (is_eligible) skipped or failed: %s", e)
+                # Theo: add structured voter columns if missing
+                def ensure_voter_col(col_sql_name, ddl):
+                    try:
+                        r = conn.execute(text(f"SHOW COLUMNS FROM voter LIKE '{col_sql_name}'"))
+                        if r.fetchone() is None:
+                            try:
+                                conn.execute(text(f"ALTER TABLE voter ADD COLUMN {ddl}"))
+                            except Exception as e:
+                                app.logger.warning("Theo: migration voter.%s failed: %s", col_sql_name, e)
+                    except Exception as e:
+                        app.logger.warning("Theo: voter column check failed (%s): %s", col_sql_name, e)
+                ensure_voter_col('first_name', "first_name VARCHAR(120) NULL")
+                ensure_voter_col('last_name', "last_name VARCHAR(120) NULL")
+                ensure_voter_col('dob', "dob DATE NULL")
+                ensure_voter_col('address_line1', "address_line1 VARCHAR(200) NULL")
+                ensure_voter_col('address_line2', "address_line2 VARCHAR(200) NULL")
+                ensure_voter_col('suburb', "suburb VARCHAR(120) NULL")
+                ensure_voter_col('state', "state VARCHAR(8) NULL")
+                ensure_voter_col('postcode', "postcode VARCHAR(8) NULL")
         except Exception as e:
             app.logger.warning("Theo: migration check failed: %s", e)
 
@@ -314,6 +333,16 @@ def _apply_security_headers(resp):
 # Models
 class Voter(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    # Theo: Issue 16 - structured identity (kept nullable for compatibility)
+    first_name = db.Column(db.String(120), nullable=True)
+    last_name = db.Column(db.String(120), nullable=True)
+    dob = db.Column(db.Date, nullable=True)
+    address_line1 = db.Column(db.String(200), nullable=True)
+    address_line2 = db.Column(db.String(200), nullable=True)
+    suburb = db.Column(db.String(120), nullable=True)
+    state = db.Column(db.String(8), nullable=True)
+    postcode = db.Column(db.String(8), nullable=True)
+    # Legacy fields
     name = db.Column(db.String(120), nullable=False)
     address = db.Column(db.String(200), nullable=False)
     enrolled = db.Column(db.Boolean, default=False)
@@ -480,10 +509,41 @@ def _enforce_mfa_on_vote():
 @app.route('/auth/register', methods=['GET', 'POST'])
 def auth_register():
     if request.method == 'POST':
+        from datetime import date as _dt_date  # local import to avoid top collisions
         username = request.form.get('username', '').strip()
         password = request.form.get('password', '').strip()
+        # Theo: Issue 16 - capture identity + address + DOB
+        first_name = request.form.get('first_name', '').strip()
+        last_name = request.form.get('last_name', '').strip()
+        dob_raw = request.form.get('dob', '').strip()
+        address_line1 = request.form.get('address_line1', '').strip()
+        address_line2 = request.form.get('address_line2', '').strip()
+        suburb = request.form.get('suburb', '').strip()
+        state = request.form.get('state', '').strip().upper()
+        postcode = request.form.get('postcode', '').strip()
         if not username or not password or len(password) < 12:
             flash('Username required and password must be at least 12 characters.')
+            return redirect(url_for('auth_register'))
+        if not (first_name and last_name and dob_raw and address_line1 and suburb and state and postcode):
+            flash('All fields except Address Line 2 are required.')
+            return redirect(url_for('auth_register'))
+        AU_STATES = {'NSW','VIC','QLD','SA','WA','TAS','NT','ACT'}
+        if state not in AU_STATES:
+            flash('Invalid state. Use NSW, VIC, QLD, SA, WA, TAS, NT, or ACT.')
+            return redirect(url_for('auth_register'))
+        if not (postcode.isdigit() and len(postcode) == 4):
+            flash('Postcode must be 4 digits.')
+            return redirect(url_for('auth_register'))
+        try:
+            y,m,d = [int(x) for x in dob_raw.split('-')]
+            dob = _dt_date(y,m,d)
+        except Exception:
+            flash('Invalid date of birth.')
+            return redirect(url_for('auth_register'))
+        today = _dt_date.today()
+        age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+        if age < 18:
+            flash('You must be 18 or older to create an account.')
             return redirect(url_for('auth_register'))
         if UserAccount.query.filter_by(username=username).first():
             flash('Username already exists.')
@@ -495,6 +555,23 @@ def auth_register():
             role='voter'
         )
         db.session.add(user)
+        db.session.commit()
+        # Theo: create linked voter record with details
+        v = Voter(
+            first_name=first_name,
+            last_name=last_name,
+            dob=dob,
+            address_line1=address_line1,
+            address_line2=address_line2 or None,
+            suburb=suburb,
+            state=state,
+            postcode=postcode,
+            name=f"{first_name} {last_name}",
+            address=address_line1
+        )
+        db.session.add(v)
+        db.session.commit()
+        user.voter_id = v.id
         db.session.commit()
         _ensure_actor_signing_identity(user.username)  # Gurveen - Issue #4: issue voter-specific signing keys at registration for immediate audit coverage.
         flash('Account created. Please log in and set up MFA.')
@@ -525,6 +602,60 @@ def auth_login():
         flash('Logged in.')
         return redirect(url_for('index'))
     return render_template('auth_login.html')
+
+# Theo: Issue 16 — Forgot password (verify identity by First/Last/DOB)
+@app.route('/auth/forgot', methods=['GET', 'POST'])
+def auth_forgot():
+    if request.method == 'POST':
+        first_name = request.form.get('first_name','').strip()
+        last_name = request.form.get('last_name','').strip()
+        dob_raw = request.form.get('dob','').strip()
+        try:
+            from datetime import date as _dt_date
+            y, m, d = [int(x) for x in dob_raw.split('-')]
+            dob = _dt_date(y, m, d)
+        except Exception:
+            flash('Invalid date of birth.')
+            return redirect(url_for('auth_forgot'))
+        voter = Voter.query.filter_by(first_name=first_name, last_name=last_name, dob=dob).first()
+        if not voter:
+            flash('No matching record found.')
+            return redirect(url_for('auth_forgot'))
+        user = UserAccount.query.filter_by(voter_id=voter.id).first()
+        if not user:
+            flash('No account linked to the provided details.')
+            return redirect(url_for('auth_forgot'))
+        session['reset_user_id'] = user.id
+        return redirect(url_for('auth_reset'))
+    return render_template('auth_forgot.html')
+
+# Theo: Issue 16 — Reset password after verification
+@app.route('/auth/reset', methods=['GET', 'POST'])
+def auth_reset():
+    uid = session.get('reset_user_id')
+    if not uid:
+        flash('Start with Forgot Password.')
+        return redirect(url_for('auth_forgot'))
+    if request.method == 'POST':
+        p1 = request.form.get('password','').strip()
+        p2 = request.form.get('confirm_password','').strip()
+        if len(p1) < 12:
+            flash('Password must be at least 12 characters.')
+            return redirect(url_for('auth_reset'))
+        if p1 != p2:
+            flash('Passwords do not match.')
+            return redirect(url_for('auth_reset'))
+        user = UserAccount.query.get(uid)
+        if not user:
+            flash('Account not found.')
+            session.pop('reset_user_id', None)
+            return redirect(url_for('auth_forgot'))
+        user.password_hash = generate_password_hash(p1)
+        db.session.commit()
+        session.pop('reset_user_id', None)
+        flash('Password updated. Please log in.')
+        return redirect(url_for('auth_login'))
+    return render_template('auth_reset.html')
 
 # Theo: Issue 6 - MFA setup (generate TOTP secret and show otpauth URI)
 @app.route('/auth/mfa-setup', methods=['GET'])
@@ -693,9 +824,19 @@ def admin_accounts():
     if request.method == 'POST':
         action = request.form.get('action', 'update')
         if action == 'create':
+            from datetime import date as _dt_date
             new_user = request.form.get('new_username', '').strip()
             new_pass = request.form.get('new_password', '').strip()
             new_role = request.form.get('new_role', 'voter').strip()
+            # Theo: Issue 16 - require identity for voter accounts
+            first_name = request.form.get('first_name','').strip()
+            last_name = request.form.get('last_name','').strip()
+            dob_raw = request.form.get('dob','').strip()
+            address_line1 = request.form.get('address_line1','').strip()
+            address_line2 = request.form.get('address_line2','').strip()
+            suburb = request.form.get('suburb','').strip()
+            state = request.form.get('state','').strip().upper()
+            postcode = request.form.get('postcode','').strip()
             if not new_user or not new_pass or len(new_pass) < 12:
                 flash('Provide username and 12+ char password.')
                 return redirect(url_for('admin_accounts'))
@@ -705,7 +846,41 @@ def admin_accounts():
             if not Role.query.get(new_role):
                 flash('Invalid role.')
                 return redirect(url_for('admin_accounts'))
-            u = UserAccount(username=new_user, password_hash=generate_password_hash(new_pass), role=new_role)
+            voter_id = None
+            if new_role == 'voter':
+                # Validate identity fields
+                if not (first_name and last_name and dob_raw and address_line1 and suburb and state and postcode):
+                    flash('All voter identity fields are required (except Address Line 2).')
+                    return redirect(url_for('admin_accounts'))
+                AU_STATES = {'NSW','VIC','QLD','SA','WA','TAS','NT','ACT'}
+                if state not in AU_STATES:
+                    flash('Invalid state for voter.')
+                    return redirect(url_for('admin_accounts'))
+                if not (postcode.isdigit() and len(postcode) == 4):
+                    flash('Voter postcode must be 4 digits.')
+                    return redirect(url_for('admin_accounts'))
+                try:
+                    y,m,d = [int(x) for x in dob_raw.split('-')]
+                    dob = _dt_date(y,m,d)
+                except Exception:
+                    flash('Invalid voter DOB.')
+                    return redirect(url_for('admin_accounts'))
+                today = _dt_date.today()
+                age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+                if age < 18:
+                    flash('Voter must be 18 or older.')
+                    return redirect(url_for('admin_accounts'))
+                v = Voter(
+                    first_name=first_name, last_name=last_name, dob=dob,
+                    address_line1=address_line1, address_line2=address_line2 or None,
+                    suburb=suburb, state=state, postcode=postcode,
+                    name=f"{first_name} {last_name}", address=address_line1,
+                    enrolled=True
+                )
+                db.session.add(v)
+                db.session.flush()
+                voter_id = v.id
+            u = UserAccount(username=new_user, password_hash=generate_password_hash(new_pass), role=new_role, voter_id=voter_id)
             db.session.add(u)
             db.session.commit()
             flash('User created.')

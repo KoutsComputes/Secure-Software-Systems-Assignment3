@@ -6,6 +6,49 @@
       <h2>Create User</h2>
       <form method="post" class="form">
         <input type="hidden" name="action" value="create">
+        <!-- Theo: Issue 16 - identity required for voter accounts -->
+        <div class="field">
+          <span>First name (voter)</span>
+          <input name="first_name" />
+        </div>
+        <div class="field">
+          <span>Last name (voter)</span>
+          <input name="last_name" />
+        </div>
+        <div class="field">
+          <span>Date of birth (voter)</span>
+          <input name="dob" type="date" />
+        </div>
+        <div class="field">
+          <span>Address line 1 (voter)</span>
+          <input name="address_line1" />
+        </div>
+        <div class="field">
+          <span>Address line 2 (optional)</span>
+          <input name="address_line2" />
+        </div>
+        <div class="field">
+          <span>Suburb (voter)</span>
+          <input name="suburb" />
+        </div>
+        <div class="field">
+          <span>State (voter)</span>
+          <select name="state">
+            <option value="">Select state</option>
+            <option>NSW</option>
+            <option>VIC</option>
+            <option>QLD</option>
+            <option>SA</option>
+            <option>WA</option>
+            <option>TAS</option>
+            <option>NT</option>
+            <option>ACT</option>
+          </select>
+        </div>
+        <div class="field">
+          <span>Postcode (voter)</span>
+          <input name="postcode" pattern="\d{4}" maxlength="4" />
+        </div>
         <div class="field">
           <span>Username</span>
           <input name="new_username" required />

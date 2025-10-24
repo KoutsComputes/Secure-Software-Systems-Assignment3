@@ -5,6 +5,49 @@
     <div class="card form-card">
       <h2>Create Account</h2>
       <form method="post" class="form" autocomplete="off">
+        <!-- Theo: Issue 16 - Personal details + address -->
+        <div class="field">
+          <span>First name</span>
+          <input name="first_name" required />
+        </div>
+        <div class="field">
+          <span>Last name</span>
+          <input name="last_name" required />
+        </div>
+        <div class="field">
+          <span>Date of birth</span>
+          <input name="dob" type="date" required />
+        </div>
+        <div class="field">
+          <span>Address line 1</span>
+          <input name="address_line1" required />
+        </div>
+        <div class="field">
+          <span>Address line 2 (optional)</span>
+          <input name="address_line2" />
+        </div>
+        <div class="field">
+          <span>Suburb</span>
+          <input name="suburb" required />
+        </div>
+        <div class="field">
+          <span>State</span>
+          <select name="state" required>
+            <option value="">Select state</option>
+            <option>NSW</option>
+            <option>VIC</option>
+            <option>QLD</option>
+            <option>SA</option>
+            <option>WA</option>
+            <option>TAS</option>
+            <option>NT</option>
+            <option>ACT</option>
+          </select>
+        </div>
+        <div class="field">
+          <span>Postcode</span>
+          <input name="postcode" pattern="\d{4}" maxlength="4" required />
+        </div>
         <div class="field">
           <span>Username</span>
           <input name="username" placeholder="your.username" required />

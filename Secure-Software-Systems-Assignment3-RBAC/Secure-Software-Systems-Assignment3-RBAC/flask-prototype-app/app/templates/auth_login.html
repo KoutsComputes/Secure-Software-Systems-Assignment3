@@ -17,7 +17,7 @@
           <button type="submit" class="btn">Login</button>
           <a class="btn btn-secondary" href="{{ url_for('auth_register') }}">Create account</a>
         </div>
-        <div class="notice">After login, complete MFA if prompted.</div>
+        <div class="notice">After login, complete MFA if prompted. <a href="{{ url_for('auth_forgot') }}">Forgot password?</a></div>
       </form>
     </div>
   </section>
