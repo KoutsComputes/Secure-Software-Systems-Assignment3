@@ -210,6 +210,7 @@ MFA Testing Guide - Voter Authentication (Issue 6)
 - MFA Login
   - Visit `http://localhost:5000/auth/logout` then `http://localhost:5000/auth/login`
   - After password, enter the 6-digit TOTP at `/auth/mfa`
+  - Note: Admin users log in straight to the dashboard (MFA bypass for admin is enabled for testing convenience). Use a voter account to exercise the MFA prompt.
 
 - Vote with MFA enforced
   - Use `http://localhost:5000/secure/vote` to exercise the protected flow
@@ -232,9 +233,23 @@ Frontend RBAC Testing - Issue 7 (Theo)
   - flask-prototype-app/app/templates/dashboard_*.html - dashboards per role.
 
 - Steps
-  - Log in as a user with role `voter` -> `http://localhost:5000/dashboard` should route to the Voter dashboard.
-  - As voter, you should not access `/dashboard/admin` (403) or see admin links.
-  - Change user role to `clerk` (admin action below) and reload -> `dashboard/clerk` features appear; admin remains blocked.
+  - Log in as a `voter` -> `http://localhost:5000/dashboard` routes to the Voter dashboard.
+  - Voter dashboard shows a red card (Eligibility Required) until a clerk approves; attempting `Secure Vote` redirects with guidance.
+  - As voter, `/dashboard/admin` returns 403 and admin links are hidden.
+  - Log in as `clerk` -> `dashboard/clerk` shows enrolment tools and a link to `Pending Approvals`.
+  - Log in as `admin` -> `dashboard/admin` shows Operations and Access Control.
+
+Eligibility Flow (Clerk Approvals)
+
+- Purpose
+  - Ensure voters can only vote after a clerk (or admin) verifies eligibility; prevent self-enrolment abuse.
+
+- Steps
+  - Voter registers and logs in → sees red “Eligibility Required” card on the Voter dashboard; `/secure/vote` is blocked.
+  - Clerk logs in → visit `http://localhost:5000/clerk/approvals`.
+  - Approve voter → voter becomes eligible (and a linked enrolled record is created/updated).
+  - Voter logs in again → sees green “You are eligible” card and can vote via `/secure/vote`.
+  - Deny removes the voter account (unless protected or it has recorded votes).
 
 Backend RBAC Testing - Issue 8 (Theo)
 
@@ -243,12 +258,13 @@ Backend RBAC Testing - Issue 8 (Theo)
 
 - Where the code is (Theo)
   - Database layer: `Role` table and `UserAccount.role` (FK) in `flask-prototype-app/app/app.py`.
-  - API layer: `@role_required` applied to admin/clerk routes (e.g., `/add_candidate`, `/import_scanned`, `/audit/verify`, `/dashboard/admin`, `/admin/users`).
+  - API layer: `@role_required` applied to admin/clerk routes (e.g., `/add_candidate`, `/import_scanned`, `/audit/verify`, `/dashboard/admin`, `/admin/users`, `/admin/accounts`, `/clerk/approvals`).
 
 - Steps
-  - Create or log in as an admin user; visit `http://localhost:5000/admin/users`.
-  - Change another user's role to `clerk` or `voter`.
+  - Create or log in as an admin user; visit `http://localhost:5000/admin/users` (roles) and `http://localhost:5000/admin/accounts` (create/delete/role).
+  - Change another user's role to `clerk` or `voter`; create a test voter account from `Admin Accounts`.
   - Confirm access:
     - `voter` cannot open `/add_candidate` or `/dashboard/admin` (403).
-    - `admin` can open `/dashboard/admin`, `/admin/users`, and `/add_candidate`.
+    - `clerk` can open `/clerk/approvals` and enrolment tools; cannot open admin pages.
+    - `admin` can open `/dashboard/admin`, `/admin/users`, `/admin/accounts`, `/add_candidate`, `/import_scanned`, `/audit/verify`.
     - Then `docker compose up -d --build`

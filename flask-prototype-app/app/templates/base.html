@@ -29,6 +29,8 @@
             <div class="nav-menu" role="menu">
               <a href="{{ url_for('check_enrolment') }}" role="menuitem">Check Enrolment</a>
               <a href="{{ url_for('voters') }}" role="menuitem">View Voters</a>
+              <!-- Theo: Issue 7 - Clerk approvals navigation -->
+              <a href="{{ url_for('clerk_approvals') }}" role="menuitem">Pending Approvals</a>
             </div>
           </div>
           {% endif %}

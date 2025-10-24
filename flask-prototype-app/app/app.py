@@ -4,6 +4,7 @@ import os
 import uuid
 from datetime import datetime, timedelta  # Gurveen - Issue #4: present audit timestamps in the signature tester UI. Gurveen - Issue #2: TLS cert validity window.
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import text  # Theo: lightweight schema migrations without Alembic
 from werkzeug.security import generate_password_hash, check_password_hash  # Theo: Issue 6 - password hashing
 import pyotp  # Theo: Issue 6 - TOTP MFA
 import qrcode  # Theo: Issue 6 - QR code generation for TOTP setup
@@ -150,6 +151,25 @@ def dev_admin_login():
 @app.before_first_request
 def _init_db():
     db.create_all()
+    # Theo: Lightweight schema migration for new columns (MySQL)
+    def _lightweight_migrations():
+        try:
+            with db.engine.connect() as conn:
+                try:
+                    res = conn.execute(text("SHOW COLUMNS FROM user_account LIKE 'is_eligible'"))
+                    row = res.fetchone()
+                    needs_col = row is None
+                except Exception:
+                    needs_col = True
+                if needs_col:
+                    try:
+                        conn.execute(text("ALTER TABLE user_account ADD COLUMN is_eligible TINYINT(1) NOT NULL DEFAULT 0"))
+                    except Exception as e:
+                        app.logger.warning("Theo: schema migration (is_eligible) skipped or failed: %s", e)
+        except Exception as e:
+            app.logger.warning("Theo: migration check failed: %s", e)
+
+    _lightweight_migrations()
     # Theo: Issue 8 - Seed default roles (DB-level RBAC)
     try:
         existing = {r.name for r in Role.query.all()}
@@ -285,6 +305,8 @@ class UserAccount(db.Model):
     voter_id = db.Column(db.Integer, db.ForeignKey('voter.id'), nullable=True)
     # Theo: Issue 8 - RBAC in database: role persisted on the user
     role = db.Column(db.String(32), db.ForeignKey('role.name'), nullable=False, default='voter')
+    # Theo: Issue 7/8 - Voter eligibility requires clerk/admin approval before voting
+    is_eligible = db.Column(db.Boolean, default=False)
 
 # Theo: Issue 8 - Roles table in database (separate DB layer for RBAC)
 class Role(db.Model):
@@ -517,6 +539,14 @@ def auth_logout():
 @app.route('/secure/vote', methods=['GET', 'POST'])
 @login_required_and_mfa
 def secure_vote():
+    # Theo: Issue 7 - Only eligible voters can vote; others see guidance
+    user = _current_user()
+    if not user or user.role != 'voter':
+        flash('Only voter accounts can cast votes.')
+        return redirect(url_for('dashboard_root'))
+    if not user.is_eligible:
+        flash('Your eligibility must be verified by a clerk before voting.')
+        return redirect(url_for('dashboard_voter'))
     # Reuse the existing vote handler under auth protection
     return vote()
 
@@ -546,6 +576,166 @@ def dashboard_clerk():
 @role_required('admin')
 def dashboard_admin():
     return render_template('dashboard_admin.html')
+
+# Theo: Issue 7 - Clerk approvals: verify or deny voter eligibility
+@app.route('/clerk/approvals', methods=['GET', 'POST'])
+@role_required('clerk', 'admin')
+def clerk_approvals():
+    if request.method == 'POST':
+        action = request.form.get('action', '')
+        username = request.form.get('username', '').strip()
+        u = UserAccount.query.filter_by(username=username).first()
+        if not u:
+            flash('User not found.')
+            return redirect(url_for('clerk_approvals'))
+        if action == 'approve':
+            u.is_eligible = True
+            if not u.voter_id:
+                v = Voter(name=username, address='N/A', enrolled=True)
+                db.session.add(v)
+                db.session.commit()
+                u.voter_id = v.id
+            else:
+                v = Voter.query.get(u.voter_id)
+                if v:
+                    v.enrolled = True
+            db.session.commit()
+            flash('Voter approved and enrolled.')
+        elif action == 'deny':
+            protected = {
+                app.config.get('DEFAULT_ADMIN_USERNAME'),
+                app.config.get('DEFAULT_CLERK_USERNAME'),
+                app.config.get('DEFAULT_VOTER_USERNAME'),
+            }
+            if u.username in protected:
+                flash('Cannot delete protected default accounts.')
+                return redirect(url_for('clerk_approvals'))
+            if u.voter_id and Vote.query.filter_by(voter_id=u.voter_id).first():
+                flash('Cannot delete account with recorded votes.')
+                return redirect(url_for('clerk_approvals'))
+            if u.voter_id:
+                v = Voter.query.get(u.voter_id)
+                if v:
+                    db.session.delete(v)
+            db.session.delete(u)
+            db.session.commit()
+            flash('Voter denied and account removed.')
+        return redirect(url_for('clerk_approvals'))
+    pending = UserAccount.query.filter_by(role='voter', is_eligible=False).order_by(UserAccount.username).all()
+    rows = ''.join(
+        f"<tr><td>{u.username}</td><td>pending</td><td>"
+        f"<form method='post' style='display:inline'><input type='hidden' name='username' value='{u.username}'><input type='hidden' name='action' value='approve'><button type='submit'>Approve</button></form> "
+        f"<form method='post' style='display:inline' onsubmit=\"return confirm('Deny and remove {u.username}?')\"><input type='hidden' name='username' value='{u.username}'><input type='hidden' name='action' value='deny'><button type='submit'>Deny</button></form>"
+        f"</td></tr>"
+        for u in pending
+    )
+    return f"""
+    <!-- Theo: Issue 7 - Clerk approvals for voter eligibility -->
+    <h2>Pending Voter Approvals</h2>
+    <table border='1' cellpadding='6'>
+      <tr><th>Username</th><th>Status</th><th>Actions</th></tr>
+      {rows}
+    </table>
+    <p><a href='{url_for('dashboard_clerk')}'>Back to clerk dashboard</a></p>
+    """
+
+# Theo: Issue 8 - Admin: manage users (create/delete/role)
+@app.route('/admin/accounts', methods=['GET', 'POST'])
+@role_required('admin')
+def admin_accounts():
+    protected = {
+        app.config.get('DEFAULT_ADMIN_USERNAME'),
+        app.config.get('DEFAULT_CLERK_USERNAME'),
+        app.config.get('DEFAULT_VOTER_USERNAME'),
+    }
+    if request.method == 'POST':
+        action = request.form.get('action', 'update')
+        if action == 'create':
+            new_user = request.form.get('new_username', '').strip()
+            new_pass = request.form.get('new_password', '').strip()
+            new_role = request.form.get('new_role', 'voter').strip()
+            if not new_user or not new_pass or len(new_pass) < 12:
+                flash('Provide username and 12+ char password.')
+                return redirect(url_for('admin_accounts'))
+            if UserAccount.query.filter_by(username=new_user).first():
+                flash('User already exists.')
+                return redirect(url_for('admin_accounts'))
+            if not Role.query.get(new_role):
+                flash('Invalid role.')
+                return redirect(url_for('admin_accounts'))
+            u = UserAccount(username=new_user, password_hash=generate_password_hash(new_pass), role=new_role)
+            db.session.add(u)
+            db.session.commit()
+            flash('User created.')
+            return redirect(url_for('admin_accounts'))
+        elif action == 'delete':
+            username = request.form.get('username', '').strip()
+            u = UserAccount.query.filter_by(username=username).first()
+            if not u:
+                flash('User not found.')
+                return redirect(url_for('admin_accounts'))
+            if username in protected or u.id == session.get('user_id'):
+                flash('Cannot delete protected or current account.')
+                return redirect(url_for('admin_accounts'))
+            if u.voter_id and Vote.query.filter_by(voter_id=u.voter_id).first():
+                flash('Cannot delete account with recorded votes.')
+                return redirect(url_for('admin_accounts'))
+            if u.voter_id:
+                v = Voter.query.get(u.voter_id)
+                if v:
+                    db.session.delete(v)
+            db.session.delete(u)
+            db.session.commit()
+            flash('User deleted.')
+            return redirect(url_for('admin_accounts'))
+        else:
+            username = request.form.get('username', '').strip()
+            new_role = request.form.get('role', '').strip()
+            u = UserAccount.query.filter_by(username=username).first()
+            if not u:
+                flash('User not found.')
+                return redirect(url_for('admin_accounts'))
+            if not Role.query.get(new_role):
+                flash('Invalid role.')
+                return redirect(url_for('admin_accounts'))
+            u.role = new_role
+            db.session.commit()
+            flash('Role updated.')
+            return redirect(url_for('admin_accounts'))
+    users = UserAccount.query.order_by(UserAccount.username).all()
+    roles = Role.query.order_by(Role.name).all()
+    options = ''.join(f'<option value="{r.name}">{r.name}</option>' for r in roles)
+    rows = ''.join(
+        f"<tr><td>{u.username}</td><td>{u.role}</td><td>{'Yes' if getattr(u,'is_eligible', False) else 'No'}</td>"
+        f"<td><form method='post' style='display:inline'>"
+        f"<input type='hidden' name='username' value='{u.username}'>"
+        f"<select name='role'>{options}</select> <button type='submit'>Change</button></form> "
+        f"<form method='post' style='display:inline' onsubmit=\"return confirm('Delete {u.username}?')\">"
+        f"<input type='hidden' name='action' value='delete'>"
+        f"<input type='hidden' name='username' value='{u.username}'><button type='submit'>Delete</button></form></td></tr>"
+        for u in users
+    )
+    create_form = f"""
+    <h3>Create User</h3>
+    <form method='post' class='form'>
+      <input type='hidden' name='action' value='create'>
+      <div class='field'><span>Username</span><input name='new_username' required></div>
+      <div class='field'><span>Password (12+)</span><input name='new_password' type='password' minlength='12' required></div>
+      <div class='field'><span>Role</span><select name='new_role'>{options}</select></div>
+      <div class='actions'><button class='btn' type='submit'>Create</button></div>
+    </form>
+    """
+    return f"""
+    <!-- Theo: Issue 8 - Admin user management (create/delete/role) -->
+    <h2>Manage Users</h2>
+    {create_form}
+    <h3>Existing Users</h3>
+    <table border='1' cellpadding='6'>
+      <tr><th>Username</th><th>Role</th><th>Eligible</th><th>Actions</th></tr>
+      {rows}
+    </table>
+    <p><a href='{url_for('dashboard_admin')}'>Back to admin dashboard</a></p>
+    """
 
 # Theo: Issue 8 - Admin: manage user roles (API + UI)
 @app.route('/admin/users', methods=['GET', 'POST'])
