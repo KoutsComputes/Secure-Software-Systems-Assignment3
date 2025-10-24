@@ -75,19 +75,3 @@ RATE_LIMIT_TRUSTED_IP_HEADERS = [
     ).split(',')
     if header.strip()
 ]
-
-# Vote verifiability: secret used for HMAC-based receipt formula
-RECEIPT_SECRET = os.environ.get('RECEIPT_SECRET', SECRET_KEY)
-
-# URL validation: allowed external redirect hosts (comma-separated). Empty -> disallow externals
-ALLOWED_REDIRECT_HOSTS = [
-    h.strip() for h in os.environ.get('ALLOWED_REDIRECT_HOSTS', '').split(',') if h.strip()
-]
-
-# Simple cache TTLs (seconds) for common data
-CACHE_TTL_CANDIDATES = int(os.environ.get('CACHE_TTL_CANDIDATES', '60'))
-CACHE_TTL_RESULTS = int(os.environ.get('CACHE_TTL_RESULTS', '30'))
-
-# Backups: output directories for local + simulated cloud backups
-BACKUP_LOCAL_DIR = os.environ.get('BACKUP_LOCAL_DIR', os.path.join(os.path.dirname(__file__), 'backups', 'local'))
-BACKUP_CLOUD_DIR = os.environ.get('BACKUP_CLOUD_DIR', os.path.join(os.path.dirname(__file__), 'backups', 'cloud'))

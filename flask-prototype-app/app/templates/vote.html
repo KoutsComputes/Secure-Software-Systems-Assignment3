@@ -42,34 +42,4 @@
       </div>
     </form>
   </div>
-  <script>
-    // Requirement 15: Persist vote form data in LocalStorage for session recovery
-    (function(){
-      const KEY = 'vote_form_v1';
-      const form = document.querySelector('form');
-      function read() {
-        try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch(e){ return {}; }
-      }
-      function write(data) {
-        try { localStorage.setItem(KEY, JSON.stringify(data)); } catch(e) {}
-      }
-      function fill() {
-        const data = read();
-        if (data.voter_id) form.querySelector('[name="voter_id"]').value = data.voter_id;
-        if (data.house_preferences) form.querySelector('[name="house_preferences"]').value = data.house_preferences;
-        if (data.senate_above) form.querySelector('[name="senate_above"]').value = data.senate_above;
-        if (data.senate_below) form.querySelector('[name="senate_below"]').value = data.senate_below;
-      }
-      form.addEventListener('input', () => {
-        write({
-          voter_id: form.querySelector('[name="voter_id"]').value,
-          house_preferences: form.querySelector('[name="house_preferences"]').value,
-          senate_above: form.querySelector('[name="senate_above"]').value,
-          senate_below: form.querySelector('[name="senate_below"]').value,
-        });
-      });
-      form.addEventListener('submit', () => { try { localStorage.removeItem(KEY); } catch(e){} });
-      document.addEventListener('DOMContentLoaded', fill);
-    })();
-  </script>
 {% endblock %}
