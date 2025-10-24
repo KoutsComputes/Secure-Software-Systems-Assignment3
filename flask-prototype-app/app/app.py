@@ -154,7 +154,26 @@ def dev_admin_login():
 @app.before_first_request
 def _init_db():
     db.create_all()
-    # Theo: Issue 8 - Seed default roles (DB‑level RBAC)
+    # Theo: Lightweight schema migration for new columns (MySQL)
+    def _lightweight_migrations():
+        try:
+            with db.engine.connect() as conn:
+                try:
+                    res = conn.execute(text("SHOW COLUMNS FROM user_account LIKE 'is_eligible'"))
+                    row = res.fetchone()
+                    needs_col = row is None
+                except Exception:
+                    needs_col = True
+                if needs_col:
+                    try:
+                        conn.execute(text("ALTER TABLE user_account ADD COLUMN is_eligible TINYINT(1) NOT NULL DEFAULT 0"))
+                    except Exception as e:
+                        app.logger.warning("Theo: schema migration (is_eligible) skipped or failed: %s", e)
+        except Exception as e:
+            app.logger.warning("Theo: migration check failed: %s", e)
+
+    _lightweight_migrations()
+    # Theo: Issue 8 - Seed default roles (DB-level RBAC)
     try:
         existing = {r.name for r in Role.query.all()}
     except Exception:
