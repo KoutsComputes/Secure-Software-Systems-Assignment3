@@ -433,6 +433,11 @@ def auth_login():
             flash('Invalid username or password.')
             return redirect(url_for('auth_login'))
         session['user_id'] = user.id
+        # Theo: Admins bypass MFA setup/prompt and go straight to dashboard
+        if getattr(user, 'role', None) == 'admin':
+            session['mfa_ok'] = True
+            flash('Logged in as admin.')
+            return redirect(url_for('index'))
         # If user has MFA enabled, go to MFA prompt; otherwise mark OK
         if user.mfa_enabled:
             session['mfa_ok'] = False
