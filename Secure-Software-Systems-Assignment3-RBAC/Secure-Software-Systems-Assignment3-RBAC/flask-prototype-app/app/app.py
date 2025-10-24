@@ -2,7 +2,11 @@ from flask import Flask, render_template, request, redirect, url_for, flash, jso
 import json  # Gurveen - Issue #4: parse audit log entries for signature diagnostics.
 import os
 import uuid
+import hmac
+import hashlib
+import time
 from datetime import datetime, timedelta  # Gurveen - Issue #4: present audit timestamps in the signature tester UI. Gurveen - Issue #2: TLS cert validity window.
+import re
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text  # Theo: lightweight schema migrations without Alembic
 from werkzeug.security import generate_password_hash, check_password_hash  # Theo: Issue 6 - password hashing
@@ -30,6 +34,27 @@ app = Flask(__name__)
 _basedir = os.path.dirname(__file__)
 app.config.from_pyfile(os.path.join(_basedir, 'config.py'))
 db = SQLAlchemy(app)
+
+# Simple in-memory cache for frequently accessed data (Requirement 14)
+_cache_store = {}
+
+def _cache_get(name: str):
+    entry = _cache_store.get(name)
+    if not entry:
+        return None, False
+    value, expires_at = entry
+    if expires_at < time.time():
+        _cache_store.pop(name, None)
+        return None, False
+    return value, True
+
+def _cache_set(name: str, value, ttl: int):
+    _cache_store[name] = (value, time.time() + int(ttl))
+
+def _cache_invalidate(prefix: str):
+    for k in list(_cache_store.keys()):
+        if k.startswith(prefix):
+            _cache_store.pop(k, None)
 
 # Gurveen - Issue #4: guarantee every actor has a dedicated Ed25519 signing identity on disk so their future actions can
 # be signed without delays and auditors can verify which credential authored any given audit trail event.
@@ -62,6 +87,20 @@ limiter = Limiter(
     strategy='fixed-window-elastic-expiry',  # Gurveen - Issue #3: steady fairness under bursts.
     headers_enabled=True
 )
+
+# Requirement 16/20: basic input validators/sanitizers
+_re_csv_numbers = re.compile(r"[^0-9,]+")
+_re_csv_words = re.compile(r"[^A-Za-z0-9 \-']+")
+
+def _sanitize_csv_numbers(raw: str) -> str:
+    cleaned = _re_csv_numbers.sub('', raw or '')
+    parts = [p.strip() for p in cleaned.split(',') if p.strip().isdigit()]
+    return ','.join(parts)
+
+def _sanitize_csv_words(raw: str) -> str:
+    cleaned = _re_csv_words.sub('', raw or '')
+    parts = [p.strip() for p in cleaned.split(',') if p.strip()]
+    return ','.join(parts)
 
 # Gurveen - Issue #2: Generate self-signed TLS certificates on-demand for localhost testing.
 def _ensure_self_signed_certificates(cert_path: str, key_path: str) -> None:
@@ -263,6 +302,10 @@ def _apply_security_headers(resp):
         resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
         resp.headers.setdefault('X-Frame-Options', 'DENY')
         resp.headers.setdefault('Referrer-Policy', 'no-referrer')
+        # Requirement 14: cache headers for common, safe GET views
+        cacheable_endpoints = {'candidates', 'results', 'api_results'}
+        if request.endpoint in cacheable_endpoints and request.method == 'GET':
+            resp.headers.setdefault('Cache-Control', 'public, max-age=30')
     except Exception:
         # Keep response flowing even if header injection fails (logging handled upstream).
         pass
@@ -294,6 +337,20 @@ class VoteReceipt(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     vote_id = db.Column(db.Integer, db.ForeignKey('vote.id'), nullable=False)
     receipt = db.Column(db.String(64), unique=True, nullable=False)
+
+
+def _generate_receipt(vote_obj: 'Vote', source: str = 'electronic') -> str:
+    """Requirement 10: metadata-based receipt formula (HMAC day-scoped).
+
+    Code = YYYYMMDD-<16 hex chars>
+    HMAC over: vote_id : yyyymmdd : source : CF-IPCountry (if any)
+    """
+    secret = app.config.get('RECEIPT_SECRET', app.config.get('SECRET_KEY', ''))
+    ymd = datetime.utcnow().strftime('%Y%m%d')
+    country = request.headers.get('CF-IPCountry', 'XX') or 'XX'
+    msg = f"{vote_obj.id}:{ymd}:{source}:{country}"
+    digest = hmac.new(secret.encode('utf-8'), msg.encode('utf-8'), hashlib.sha256).hexdigest()
+    return f"{ymd}-{digest[:16].upper()}"
 
 # Theo: Issue 6 - Authentication model (password + TOTP secret)
 class UserAccount(db.Model):
@@ -795,13 +852,21 @@ def add_candidate():
         db.session.commit()
         actor = (_current_user().username if _current_user() else 'system')
         get_audit_logger().log('add_candidate', actor=actor, details={'name': name, 'party': party, 'order': order})
+        _cache_invalidate('candidates:')  # Requirement 14: bust cache on mutation
         flash('Candidate added!')
         return redirect(url_for('index'))
     return render_template('add_candidate.html')
 
 @app.route('/candidates')
 def candidates():
-    candidates = Candidate.query.order_by(Candidate.party, Candidate.order).all()
+    # Requirement 14: cache common data
+    key = 'candidates:list'
+    cached, hit = _cache_get(key)
+    if hit:
+        candidates = cached
+    else:
+        candidates = Candidate.query.order_by(Candidate.party, Candidate.order).all()
+        _cache_set(key, candidates, app.config.get('CACHE_TTL_CANDIDATES', 60))
     return render_template('candidates.html', candidates=candidates)
 
 # Voters list (enrolled only)
@@ -820,9 +885,9 @@ def vote():
     candidates = Candidate.query.all()
     if request.method == 'POST':
         voter_id = int(request.form['voter_id'])
-        house_preferences = request.form.get('house_preferences', '')
-        senate_above = request.form.get('senate_above', '')
-        senate_below = request.form.get('senate_below', '')
+        house_preferences = _sanitize_csv_numbers(request.form.get('house_preferences', ''))
+        senate_above = _sanitize_csv_words(request.form.get('senate_above', ''))
+        senate_below = _sanitize_csv_numbers(request.form.get('senate_below', ''))
         # Validate voter eligibility and one-vote rule
         voter = Voter.query.get(voter_id)
         if not voter or not voter.enrolled:
@@ -843,8 +908,8 @@ def vote():
         )
         db.session.add(vote_obj)
         db.session.commit()
-        # Generate verifiable receipt (non-identifying)
-        receipt = uuid.uuid4().hex
+        # Requirement 10: Generate metadata-based receipt
+        receipt = _generate_receipt(vote_obj, source="electronic")
         db.session.add(VoteReceipt(vote_id=vote_obj.id, receipt=receipt))
         db.session.commit()
         get_audit_logger().log('submit_vote', actor=str(voter_id), details={'vote_id': vote_obj.id})
@@ -867,9 +932,9 @@ def vote_overseas():
             return redirect(url_for('vote_overseas'))
 
         voter_id = int(request.form['voter_id'])
-        house_preferences = request.form.get('house_preferences', '')
-        senate_above = request.form.get('senate_above', '')
-        senate_below = request.form.get('senate_below', '')
+        house_preferences = _sanitize_csv_numbers(request.form.get('house_preferences', ''))
+        senate_above = _sanitize_csv_words(request.form.get('senate_above', ''))
+        senate_below = _sanitize_csv_numbers(request.form.get('senate_below', ''))
 
         voter = Voter.query.get(voter_id)
         if not voter or not voter.enrolled:
@@ -890,7 +955,7 @@ def vote_overseas():
         )
         db.session.add(vote_obj)
         db.session.commit()
-        receipt = uuid.uuid4().hex
+        receipt = _generate_receipt(vote_obj, source="electronic")
         db.session.add(VoteReceipt(vote_id=vote_obj.id, receipt=receipt))
         db.session.commit()
         get_audit_logger().log('submit_vote_overseas', actor=str(voter_id), details={'vote_id': vote_obj.id, 'mission': mission})
@@ -941,6 +1006,8 @@ def results():
     senate_party_display = sorted(senate_party_tally.items(), key=lambda x: x[1], reverse=True)
     senate_candidate_display = sorted([(candidate_name(k), v) for k, v in senate_candidate_tally.items()], key=lambda x: x[1], reverse=True)
 
+    # Requirement 14: cache results aggregates in-memory briefly
+    # Note: since votes are rare, we recompute per request for correctness and rely on browser cache headers.
     return render_template(
         'results.html',
         house_display=house_display,
@@ -1076,6 +1143,85 @@ def verify():
             if vr:
                 status = 'counted'
     return render_template('verify.html', status=status)
+
+
+# Requirement 17: Admin-triggered backup (hybrid local + simulated cloud)
+def _export_backup_payload():
+    def voter_row(v: Voter):
+        return {'id': v.id, 'name': v.name, 'address': v.address, 'enrolled': bool(v.enrolled)}
+    def candidate_row(c: Candidate):
+        return {'id': c.id, 'name': c.name, 'party': c.party, 'order': c.order}
+    def vote_row(v: Vote):
+        return {
+            'id': v.id,
+            'voter_id': v.voter_id,
+            'house_preferences': v.house_preferences,
+            'senate_above': v.senate_above,
+            'senate_below': v.senate_below,
+            'source': v.source,
+        }
+    def receipt_row(r: VoteReceipt):
+        return {'id': r.id, 'vote_id': r.vote_id, 'receipt': r.receipt}
+    def user_row(u: 'UserAccount'):
+        return {'id': u.id, 'username': u.username, 'role': u.role, 'mfa_enabled': bool(u.mfa_enabled), 'is_eligible': bool(u.is_eligible)}
+
+    payload = {
+        'ts': datetime.utcnow().isoformat() + 'Z',
+        'voters': [voter_row(v) for v in Voter.query.all()],
+        'candidates': [candidate_row(c) for c in Candidate.query.all()],
+        'votes': [vote_row(v) for v in Vote.query.all()],
+        'receipts': [receipt_row(r) for r in VoteReceipt.query.all()],
+        'users': [user_row(u) for u in UserAccount.query.all()],
+    }
+    return payload
+
+
+@app.route('/admin/backup', methods=['POST', 'GET'])
+@role_required('admin')
+def admin_backup():
+    os.makedirs(app.config.get('BACKUP_LOCAL_DIR'), exist_ok=True)
+    os.makedirs(app.config.get('BACKUP_CLOUD_DIR'), exist_ok=True)
+    payload = _export_backup_payload()
+    ts = datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')
+    fname = f"backup-{ts}.json"
+    local_path = os.path.join(app.config.get('BACKUP_LOCAL_DIR'), fname)
+    cloud_path = os.path.join(app.config.get('BACKUP_CLOUD_DIR'), fname)
+    with open(local_path, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, ensure_ascii=False, separators=(',', ':'), sort_keys=True)
+    with open(cloud_path, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, ensure_ascii=False, separators=(',', ':'), sort_keys=True)
+    return jsonify({'ok': True, 'local': local_path, 'cloud': cloud_path})
+
+
+# Requirement 20: URL validation and test endpoint
+from urllib.parse import urlparse
+
+def _is_safe_url(url: str) -> bool:
+    if not url:
+        return False
+    p = urlparse(url)
+    # allow relative URLs
+    if not p.netloc:
+        return True
+    if p.scheme not in {'http', 'https'}:
+        return False
+    allowed = set(app.config.get('ALLOWED_REDIRECT_HOSTS') or [])
+    return p.hostname in allowed
+
+
+@app.route('/url_validation_test')
+@role_required('admin')
+def url_validation_test():
+    test_url = request.args.get('url', '')
+    return jsonify({'url': test_url, 'allowed': _is_safe_url(test_url)})
+
+
+@app.route('/cache_test')
+@role_required('admin')
+def cache_test():
+    # Surface whether candidates list is currently cached
+    _, hit = _cache_get('candidates:list')
+    return jsonify({'candidates_cache_hit': hit, 'ttl_candidates': app.config.get('CACHE_TTL_CANDIDATES', 60)})
 
 
 # Audit log verification (admin)

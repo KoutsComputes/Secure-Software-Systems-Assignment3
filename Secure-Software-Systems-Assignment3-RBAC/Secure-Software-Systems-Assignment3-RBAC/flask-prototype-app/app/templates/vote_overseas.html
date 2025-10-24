@@ -47,4 +47,32 @@
       </div>
     </form>
   </div>
+  <script>
+    // Requirement 15: Persist overseas vote form in LocalStorage
+    (function(){
+      const KEY = 'vote_overseas_form_v1';
+      const form = document.querySelector('form');
+      function read() { try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch(e){ return {}; } }
+      function write(d){ try { localStorage.setItem(KEY, JSON.stringify(d)); } catch(e){} }
+      function fill(){
+        const d = read();
+        if (d.mission_code) form.querySelector('[name="mission_code"]').value = d.mission_code;
+        if (d.voter_id) form.querySelector('[name="voter_id"]').value = d.voter_id;
+        if (d.house_preferences) form.querySelector('[name="house_preferences"]').value = d.house_preferences;
+        if (d.senate_above) form.querySelector('[name="senate_above"]').value = d.senate_above;
+        if (d.senate_below) form.querySelector('[name="senate_below"]').value = d.senate_below;
+      }
+      form.addEventListener('input', () => {
+        write({
+          mission_code: form.querySelector('[name="mission_code"]').value,
+          voter_id: form.querySelector('[name="voter_id"]').value,
+          house_preferences: form.querySelector('[name="house_preferences"]').value,
+          senate_above: form.querySelector('[name="senate_above"]').value,
+          senate_below: form.querySelector('[name="senate_below"]').value,
+        });
+      });
+      form.addEventListener('submit', () => { try { localStorage.removeItem(KEY); } catch(e){} });
+      document.addEventListener('DOMContentLoaded', fill);
+    })();
+  </script>
 {% endblock %}
