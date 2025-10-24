@@ -1,3 +1,6 @@
+# Note : 
+The Master branch is the main branch....
+
 # Electronic Voting Prototype
 
 A demonstration prototype for an Australian federal election e-voting system. This project showcases the essential components of a secure, user-friendly electronic voting platform.
