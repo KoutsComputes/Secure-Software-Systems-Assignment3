@@ -44,7 +44,31 @@
       <div class="actions">
         <button class="btn" type="submit">Submit Vote</button>
         <a class="btn btn-secondary" href="{{ url_for('index') }}">Back</a>
-      </div>
-    </form>
   </div>
+  </form>
+  </div>
+  <script>
+    // Session recovery for overseas form
+    (function(){
+      const form = document.querySelector('form');
+      const key = 'vote_overseas_form_cache';
+      try {
+        const cached = JSON.parse(localStorage.getItem(key) || '{}');
+        if (cached.house_preferences) document.querySelector('[name="house_preferences"]').value = cached.house_preferences;
+        if (cached.senate_above) document.querySelector('[name="senate_above"]').value = cached.senate_above;
+        if (cached.senate_below) document.querySelector('[name="senate_below"]').value = cached.senate_below;
+      } catch(e) {}
+      form.addEventListener('input', function(){
+        const state = {
+          house_preferences: document.querySelector('[name="house_preferences"]').value,
+          senate_above: document.querySelector('[name="senate_above"]').value,
+          senate_below: document.querySelector('[name="senate_below"]').value,
+        };
+        try { localStorage.setItem(key, JSON.stringify(state)); } catch(e) {}
+      });
+      form.addEventListener('submit', function(){
+        try { localStorage.removeItem(key); } catch(e) {}
+      });
+    })();
+  </script>
 {% endblock %}

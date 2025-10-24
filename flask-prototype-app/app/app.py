@@ -24,6 +24,9 @@ except ImportError:
     from .security import get_audit_logger, get_signature_manager, is_country_allowed  # when imported as package
     from .crypto_utils import encrypt_ballot_value, decrypt_ballot_value  # Gurveen - Issue #1: AES ballot helpers
 
+import hashlib
+import jwt  # PyJWT for JWT receipts (EdDSA/Ed25519)
+
 app = Flask(__name__)
 # Avoid import-time package/module name conflicts by loading config from file path
 _basedir = os.path.dirname(__file__)
@@ -58,7 +61,7 @@ limiter = Limiter(
     app=app,
     default_limits=[app.config.get('RATE_LIMIT_DEFAULT')],
     storage_uri=app.config.get('RATE_LIMIT_STORAGE_URI'),
-    strategy='fixed-window-elastic-expiry',  # Gurveen - Issue #3: steady fairness under bursts.
+    strategy='fixed-window',  # Gurveen - Issue #3: use strategy supported by deployed Flask-Limiter build.
     headers_enabled=True
 )
 
@@ -150,7 +153,7 @@ def dev_admin_login():
 @app.before_first_request
 def _init_db():
     db.create_all()
-    # Theo: Issue 8 - Seed default roles (DB-level RBAC)
+    # Theo: Issue 8 - Seed default roles (DB‑level RBAC)
     try:
         existing = {r.name for r in Role.query.all()}
     except Exception:
@@ -243,10 +246,8 @@ def _apply_security_headers(resp):
         resp.headers.setdefault('X-Content-Type-Options', 'nosniff')
         resp.headers.setdefault('X-Frame-Options', 'DENY')
         resp.headers.setdefault('Referrer-Policy', 'no-referrer')
-    except Exception:
-        # Keep response flowing even if header injection fails (logging handled upstream).
-        pass
-    return resp
+    finally:
+        return resp
 
 # Models
 class Voter(db.Model):
@@ -365,6 +366,23 @@ def _inject_user_role():
         'user_role': (user.role if user else None)
     }
 
+
+def _safe_next_url(default_endpoint: str = 'index') -> str:
+    """Validate a 'next' URL parameter to prevent open redirects.
+    Allow only relative paths within this app; otherwise fall back to default endpoint.
+    """
+    from urllib.parse import urlparse
+    target = request.args.get('next') or request.form.get('next')
+    if not target:
+        return url_for(default_endpoint)
+    parts = urlparse(target)
+    if parts.scheme or parts.netloc:
+        return url_for(default_endpoint)
+    # Only allow paths starting with '/'
+    if not parts.path.startswith('/'):
+        return url_for(default_endpoint)
+    return target
+
 # Theo: Issue 6/7 - Global strict auth: require login + MFA for all non-auth routes
 @app.before_request
 def _global_auth_mfa_enforcement():
@@ -433,18 +451,13 @@ def auth_login():
             flash('Invalid username or password.')
             return redirect(url_for('auth_login'))
         session['user_id'] = user.id
-        # Theo: Admins bypass MFA setup/prompt and go straight to dashboard
-        if getattr(user, 'role', None) == 'admin':
-            session['mfa_ok'] = True
-            flash('Logged in as admin.')
-            return redirect(url_for('index'))
         # If user has MFA enabled, go to MFA prompt; otherwise mark OK
         if user.mfa_enabled:
             session['mfa_ok'] = False
             return redirect(url_for('auth_mfa_prompt'))
         session['mfa_ok'] = True
         flash('Logged in.')
-        return redirect(url_for('index'))
+        return redirect(_safe_next_url('index'))
     return render_template('auth_login.html')
 
 # Theo: Issue 6 - MFA setup (generate TOTP secret and show otpauth URI)
@@ -655,7 +668,7 @@ def update_address():
 
 # Candidate Management
 @app.route('/add_candidate', methods=['GET', 'POST'])
-@role_required('admin', 'clerk')  # Theo: Issue 8 - allow clerks and admins to manage candidates
+@role_required('admin')  # Theo: Issue 8 - API RBAC enforcement (admin only)
 def add_candidate():
     if request.method == 'POST':
         name = request.form['name']
@@ -665,8 +678,7 @@ def add_candidate():
         candidate = Candidate(name=name, party=party, order=order)
         db.session.add(candidate)
         db.session.commit()
-        actor = (_current_user().username if _current_user() else 'system')
-        get_audit_logger().log('add_candidate', actor=actor, details={'name': name, 'party': party, 'order': order})
+        get_audit_logger().log('add_candidate', actor='admin', details={'name': name, 'party': party, 'order': order})
         flash('Candidate added!')
         return redirect(url_for('index'))
     return render_template('add_candidate.html')
@@ -674,7 +686,16 @@ def add_candidate():
 @app.route('/candidates')
 def candidates():
     candidates = Candidate.query.order_by(Candidate.party, Candidate.order).all()
-    return render_template('candidates.html', candidates=candidates)
+    # Lightweight caching: compute ETag over candidate listing
+    etag_src = "|".join(f"{c.id}:{c.name}:{c.party}:{c.order or ''}" for c in candidates)
+    etag = hashlib.sha256(etag_src.encode('utf-8')).hexdigest()
+    if request.headers.get('If-None-Match') == etag:
+        resp = app.response_class(status=304)
+    else:
+        resp = app.make_response(render_template('candidates.html', candidates=candidates))
+    resp.headers['ETag'] = etag
+    resp.headers['Cache-Control'] = 'public, max-age=60'
+    return resp
 
 # Voters list (enrolled only)
 @app.route('/voters')
@@ -715,12 +736,27 @@ def vote():
         )
         db.session.add(vote_obj)
         db.session.commit()
-        # Generate verifiable receipt (non-identifying)
-        receipt = uuid.uuid4().hex
+        # Generate verifiable receipt using site code + salt + timestamp
+        ts = int(datetime.utcnow().timestamp())
+        site = app.config.get('SITE_CODE', 'LOCAL-DEV')
+        salt = app.config.get('RECEIPT_SALT', app.config.get('SECRET_KEY'))
+        base = f"{vote_obj.id}|{ts}|{site}|{salt}".encode('utf-8')
+        receipt = hashlib.sha256(base).hexdigest()[:32]
         db.session.add(VoteReceipt(vote_id=vote_obj.id, receipt=receipt))
         db.session.commit()
         get_audit_logger().log('submit_vote', actor=str(voter_id), details={'vote_id': vote_obj.id})
-        return render_template('vote_receipt.html', receipt=receipt)
+        # Issue a signed JWT receipt for non-repudiation
+        signer = app.config.get('JWT_SIGNER_ACTOR', 'election_authority')
+        priv = get_signature_manager().get_private_key(signer)
+        jwt_payload = {
+            'sub': 'vote_receipt',
+            'vote_id': vote_obj.id,
+            'receipt': receipt,
+            'site': site,
+            'iat': ts
+        }
+        jwt_token = jwt.encode(jwt_payload, key=priv, algorithm='EdDSA')
+        return render_template('vote_receipt.html', receipt=receipt, jwt_token=jwt_token, jwt_alg='EdDSA', signer=signer)
     return render_template('vote.html', voters=voters, candidates=candidates)
 
 # Overseas voting with mission code gate (prototype)
@@ -762,11 +798,25 @@ def vote_overseas():
         )
         db.session.add(vote_obj)
         db.session.commit()
-        receipt = uuid.uuid4().hex
+        ts = int(datetime.utcnow().timestamp())
+        site = app.config.get('SITE_CODE', 'LOCAL-DEV')
+        salt = app.config.get('RECEIPT_SALT', app.config.get('SECRET_KEY'))
+        base = f"{vote_obj.id}|{ts}|{site}|{salt}".encode('utf-8')
+        receipt = hashlib.sha256(base).hexdigest()[:32]
         db.session.add(VoteReceipt(vote_id=vote_obj.id, receipt=receipt))
         db.session.commit()
         get_audit_logger().log('submit_vote_overseas', actor=str(voter_id), details={'vote_id': vote_obj.id, 'mission': mission})
-        return render_template('vote_receipt.html', receipt=receipt)
+        signer = app.config.get('JWT_SIGNER_ACTOR', 'election_authority')
+        priv = get_signature_manager().get_private_key(signer)
+        jwt_payload = {
+            'sub': 'vote_receipt',
+            'vote_id': vote_obj.id,
+            'receipt': receipt,
+            'site': site,
+            'iat': ts
+        }
+        jwt_token = jwt.encode(jwt_payload, key=priv, algorithm='EdDSA')
+        return render_template('vote_receipt.html', receipt=receipt, jwt_token=jwt_token, jwt_alg='EdDSA', signer=signer)
     return render_template('vote_overseas.html', voters=voters, candidates=candidates, missions=sorted(ALLOWED_MISSIONS))
 
 # Results Computation
@@ -813,13 +863,27 @@ def results():
     senate_party_display = sorted(senate_party_tally.items(), key=lambda x: x[1], reverse=True)
     senate_candidate_display = sorted([(candidate_name(k), v) for k, v in senate_candidate_tally.items()], key=lambda x: x[1], reverse=True)
 
-    return render_template(
-        'results.html',
-        house_display=house_display,
-        senate_party_display=senate_party_display,
-        senate_candidate_display=senate_candidate_display,
-        total_votes=len(all_votes)
-    )
+    # Add cache headers with ETag based on rendered data
+    etag_src = json.dumps({
+        'house': house_display,
+        'senate_party': senate_party_display,
+        'senate_candidate': senate_candidate_display,
+        'total': len(all_votes)
+    }, sort_keys=True)
+    etag = hashlib.sha256(etag_src.encode('utf-8')).hexdigest()
+    if request.headers.get('If-None-Match') == etag:
+        resp = app.response_class(status=304)
+    else:
+        resp = app.make_response(render_template(
+            'results.html',
+            house_display=house_display,
+            senate_party_display=senate_party_display,
+            senate_candidate_display=senate_candidate_display,
+            total_votes=len(all_votes)
+        ))
+    resp.headers['ETag'] = etag
+    resp.headers['Cache-Control'] = 'public, max-age=30'
+    return resp
 
 # Import scanned paper ballot results (CSV paste for prototype)
 @app.route('/import_scanned', methods=['GET', 'POST'])
@@ -880,12 +944,20 @@ def api_results():
                 first_b = firsts_b[0].strip()
                 senate_candidate_tally[first_b] = senate_candidate_tally.get(first_b, 0) + 1
 
-    return jsonify({
+    payload = {
         'house_first_pref_tally': house_tally,
         'senate_party_tally': senate_party_tally,
         'senate_candidate_first_pref_tally': senate_candidate_tally,
         'total_votes': len(all_votes)
-    })
+    }
+    etag = hashlib.sha256(json.dumps(payload, sort_keys=True).encode('utf-8')).hexdigest()
+    if request.headers.get('If-None-Match') == etag:
+        resp = app.response_class(status=304)
+    else:
+        resp = app.make_response(jsonify(payload))
+    resp.headers['ETag'] = etag
+    resp.headers['Cache-Control'] = 'public, max-age=15'
+    return resp
 
 # Manual exclusion recount (prototype): ignore listed candidate IDs in tallies
 @app.route('/recount', methods=['GET', 'POST'])
@@ -948,6 +1020,34 @@ def verify():
             if vr:
                 status = 'counted'
     return render_template('verify.html', status=status)
+
+
+# Expose public key for JWT verification (base64 raw key)
+@app.route('/api/jwt_public_key')
+def jwt_public_key():
+    signer = app.config.get('JWT_SIGNER_ACTOR', 'election_authority')
+    try:
+        pub_b64 = get_signature_manager().get_public_key_b64(signer)
+        return jsonify({'actor': signer, 'algorithm': 'EdDSA', 'ed25519_public_key_b64': pub_b64})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+
+# Verify a JWT receipt (testing tool)
+@app.route('/api/verify_jwt', methods=['POST'])
+def api_verify_jwt():
+    payload = request.get_json(silent=True) or {}
+    token = payload.get('token', '')
+    if not token:
+        return jsonify({'ok': False, 'error': 'missing token'}), 400
+    signer = app.config.get('JWT_SIGNER_ACTOR', 'election_authority')
+    try:
+        priv = get_signature_manager().get_private_key(signer)
+        pub = priv.public_key()
+        data = jwt.decode(token, key=pub, algorithms=['EdDSA'])
+        return jsonify({'ok': True, 'claims': data})
+    except Exception as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
 
 
 # Audit log verification (admin)

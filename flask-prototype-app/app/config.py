@@ -26,6 +26,8 @@ DIGITAL_SIGNATURE_AUTO_PROVISION = os.environ.get('DIGITAL_SIGNATURE_AUTO_PROVIS
 # Geolocation restrictions (ISO country codes, comma-separated). If empty, allow all.
 # When behind Cloudflare, 'CF-IPCountry' header will be used.
 ALLOWED_COUNTRIES = os.environ.get('ALLOWED_COUNTRIES', '')
+# Optional path to a GeoIP2 City/Country database (.mmdb) to resolve IP->country when not behind Cloudflare
+GEOIP_DB_PATH = os.environ.get('GEOIP_DB_PATH', '')
 
 # Gurveen - Issue #1: allow operators to override AES ballot key with a base64-encoded 32 byte value.
 BALLOT_ENCRYPTION_KEY = os.environ.get('BALLOT_ENCRYPTION_KEY', '')
@@ -75,3 +77,11 @@ RATE_LIMIT_TRUSTED_IP_HEADERS = [
     ).split(',')
     if header.strip()
 ]
+
+# Receipt and JWT settings (prototype)
+# Site/location code to incorporate into verifiable receipts
+SITE_CODE = os.environ.get('SITE_CODE', 'LOCAL-DEV')
+# Secret salt used when deriving receipt hashes (do not share publicly)
+RECEIPT_SALT = os.environ.get('RECEIPT_SALT', SECRET_KEY)
+# Actor name whose Ed25519 key signs JWT receipts (must be stable across replicas)
+JWT_SIGNER_ACTOR = os.environ.get('JWT_SIGNER_ACTOR', 'election_authority')
